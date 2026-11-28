@@ -781,9 +781,9 @@ function unstick(e, hw, hh) {
 }
 
 // Random points on road / pavement near a centre.
-function randomTileNear(cx, cy, rmin, rmax, ok) {
+function randomTileNear(cx, cy, rmin, rmax, ok, source = random) {
   for (let i = 0; i < 60; i++) {
-    const a = rnd(0, TAU), d = rnd(rmin, rmax);
+    const a = source() * TAU, d = rmin + source() * (rmax - rmin);
     const wx = cx + Math.cos(a) * d, wy = cy + Math.sin(a) * d;
     const tx = Math.floor(wx / T), ty = Math.floor(wy / T);
     if (tx < 2 || ty < 2 || tx >= MAP_W - 2 || ty >= MAP_H - 2) continue;
@@ -794,5 +794,5 @@ function randomTileNear(cx, cy, rmin, rmax, ok) {
 const randomRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD);
 const randomWalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax,
   (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY || t === SAND || t === QUAY) && !inArmyIsland(tx, ty); });
-const randomPublicRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD && !inArmyIsland(tx, ty));
-const randomPublicSidewalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === SIDEWALK && !inArmyIsland(tx, ty));
+const randomPublicRoadNear = (cx, cy, rmin, rmax, source) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD && !inArmyIsland(tx, ty), source);
+const randomPublicSidewalkNear = (cx, cy, rmin, rmax, source) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === SIDEWALK && !inArmyIsland(tx, ty), source);
