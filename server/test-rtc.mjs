@@ -30,6 +30,7 @@ function createHarness(search = '') {
   const worldEvents = [];
   const p2pChanges = [];
   const forwardedInputs = [];
+  const hostPongs = [];
   const timers = [];
   let now = 0;
   let nextTimerId = 1;
@@ -59,6 +60,8 @@ function createHarness(search = '') {
     netApplyWorldEvents: (fx, ev) => worldEvents.push({ fx, ev }),
     simHostSetP2P: (id, open) => p2pChanges.push({ id, open }),
     simHostForwardGuestInput: (id, input) => forwardedInputs.push({ id, input }),
+    netStatsOnHostPong: (stats, c, at) => hostPongs.push({ c, at }),
+    performance: { now: () => now },
     setTimeout: (fn, ms) => { const id = nextTimerId++; timers.push({ id, fn, at: now + ms }); return id; },
     clearTimeout: id => { const index = timers.findIndex(timer => timer.id === id); if (index >= 0) timers.splice(index, 1); },
     JSON,
@@ -87,7 +90,7 @@ function createHarness(search = '') {
     if (peer.onconnectionstatechange) peer.onconnectionstatechange();
   };
 
-  return { context, peers, sentSignals, snapshots, worldEvents, p2pChanges, forwardedInputs, advance, connectPeer };
+  return { context, peers, sentSignals, snapshots, worldEvents, p2pChanges, forwardedInputs, hostPongs, advance, connectPeer };
 }
 
 console.log('pure helpers');
@@ -295,6 +298,47 @@ console.log('guest role');
   await flush();
   h.connectPeer(h.peers[0]);
   ok(h.context.rtcGuestTransport() === 'P2P', 'a missing net.stats does not break the transport switch');
+}
+
+console.log('host ping over rel');
+{
+  const h = createHarness();
+  h.context.rtcHostOnSignal('p2', 'offer', 'remote-offer-sdp');
+  await flush();
+  const peer = h.peers[0];
+  const [fast, rel] = peer.channels;
+  h.connectPeer(peer);
+  const relSentBefore = rel.sent.length;
+  rel.onmessage({ data: JSON.stringify({ t: 'hping', c: 7 }) });
+  ok(rel.sent.length === relSentBefore + 1 && same(JSON.parse(rel.sent[rel.sent.length - 1]), { t: 'hpong', c: 7 }) && h.forwardedInputs.length === 0,
+    'host answers hping on rel and never forwards it as input');
+  rel.onmessage({ data: JSON.stringify({ t: 'hping', c: 8 }) });
+  const relSentAfterCap = rel.sent.length;
+  await h.advance(1000);
+  rel.onmessage({ data: JSON.stringify({ t: 'hping', c: 9 }) });
+  ok(relSentAfterCap === relSentBefore + 1 && rel.sent.length === relSentBefore + 2 && same(JSON.parse(rel.sent[rel.sent.length - 1]), { t: 'hpong', c: 9 }),
+    'P2P echo capped at one per second per peer');
+  await h.advance(1000);
+  const relSentBeforeInvalid = rel.sent.length;
+  const fastSentBeforeInvalid = fast.sent.length;
+  rel.onmessage({ data: JSON.stringify({ t: 'hping', c: 'x' }) });
+  rel.onmessage({ data: JSON.stringify({ t: 'hping' }) });
+  fast.onmessage({ data: JSON.stringify({ t: 'hping', c: 10 }) });
+  ok(rel.sent.length === relSentBeforeInvalid && fast.sent.length === fastSentBeforeInvalid && h.forwardedInputs.length === 0,
+    'hping only on rel with numeric c');
+  rel.onmessage({ data: JSON.stringify({ t: 'hping', c: 11 }) });
+  ok(same(JSON.parse(rel.sent[rel.sent.length - 1]), { t: 'hpong', c: 11 }), 'a dropped hping does not consume the per-peer budget');
+}
+{
+  const h = createHarness();
+  h.context.rtcGuestConnect('p1');
+  await flush();
+  const [, rel] = h.peers[0].channels;
+  ok(h.context.rtcGuestSendHostPing(3) === false && rel.sent.length === 0, 'rtcGuestSendHostPing returns false and sends nothing before the link is usable');
+  h.connectPeer(h.peers[0]);
+  ok(h.context.rtcGuestSendHostPing(3) === true && same(JSON.parse(rel.sent[rel.sent.length - 1]), { t: 'hping', c: 3 }), 'rtcGuestSendHostPing sends hping on rel');
+  rel.onmessage({ data: JSON.stringify({ t: 'hpong', c: 3 }) });
+  ok(h.hostPongs.length === 1 && h.hostPongs[0].c === 3, 'a guest hands the hpong from rel to netStatsOnHostPong');
 }
 
 console.log(`\n${pass} ok, ${fail} fail`);

@@ -298,6 +298,7 @@ function onServerMessage(m) {
       net.hostId = m.id ?? null;
       netResetSnapshotBaseline();
       netSyncHostRole();
+      if (hostChanged) netStatsResetHostRtt(net.stats);
       if (hostChanged && net.hostId !== null && net.hostId !== net.myId) toast(t('net.newHost', { name: m.name }));
       break;
     }
@@ -308,6 +309,7 @@ function onServerMessage(m) {
     case 'kill': netScoreKill(m.id); break;
     case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
     case 'pong': netStatsOnPong(net.stats, m.c, performance.now()); break;
+    case 'hpong': netStatsOnHostPong(net.stats, m.c, performance.now()); break;
     case 'emo': onRemoteEmote(m.id, m.e); break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
@@ -695,6 +697,7 @@ const NET_STATS_OVERLAY_REFRESH_MS = 500;
 function createNetStats() {
   return {
     rtt: null, rttLast: null,
+    hostRtt: null, hostRttLast: null,
     inputRtt: null, inputRttLast: null, pendingInputs: [],
     snapshotTimes: [], snapshotWindow: null,
     hostHz: null, tickSamples: [],
@@ -709,6 +712,15 @@ function netStatsOnPong(stats, clientTime, now) {
   if (!Number.isFinite(clientTime) || clientTime > now) return;
   stats.rttLast = now - clientTime;
   stats.rtt = netStatsSmooth(stats.rtt, stats.rttLast);
+}
+function netStatsOnHostPong(stats, clientTime, now) {
+  if (!Number.isFinite(clientTime) || clientTime > now) return;
+  stats.hostRttLast = now - clientTime;
+  stats.hostRtt = netStatsSmooth(stats.hostRtt, stats.hostRttLast);
+}
+function netStatsResetHostRtt(stats) {
+  stats.hostRtt = null;
+  stats.hostRttLast = null;
 }
 function netStatsOnInputSent(stats, seq, now) {
   stats.pendingInputs.push({ seq, sentAt: now });
@@ -785,6 +797,7 @@ function netStatsLines(stats, interpDelay, now) {
   return [
     ['transport', stats.transport],
     ['RTT', withLast(stats.rtt, stats.rttLast)],
+    ['host RTT', withLast(stats.hostRtt, stats.hostRttLast)],
     ['input RTT', withLast(stats.inputRtt, stats.inputRttLast)],
     ['snap/s', snapshotWindow.rate.toFixed(1)],
     ['interval', ms(snapshotWindow.meanInterval, 1)],
@@ -811,6 +824,16 @@ function netRenderStatsOverlay() {
 }
 function netSendPing() {
   if (netActive()) netSend({ t: 'ping', c: performance.now() });
+}
+const NET_HOST_PING_MS = 2000;
+function netHostPingRole(netState) {
+  if (netState.hostId === null) return 'server';
+  return netState.hostId === netState.myId ? 'host' : 'guest';
+}
+function netSendHostPing() {
+  if (!netActive() || netHostPingRole(net) !== 'guest') return;
+  const c = performance.now();
+  if (!rtcGuestSendHostPing(c)) netSend({ t: 'hping', c });
 }
 addEventListener('keydown', e => {
   if (e.code !== 'F3') return;

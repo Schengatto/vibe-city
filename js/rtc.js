@@ -9,6 +9,7 @@ const RTC_MAX_INPUT_BYTES = 2048;
 const RTC_MAX_SNAPSHOT_BYTES = 256 * 1024;
 const RTC_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg', 'sa'];
 const RTC_DEAD_CONNECTION_STATES = ['failed', 'closed'];
+const RTC_HOST_PING_MIN_INTERVAL_MS = 1000;
 
 const rtcHostPeers = new Map();
 const rtcGuest = { hostId: null, peer: null, usable: false, attempt: 0, retryTimer: null, connectTimer: null, lastTick: -1 };
@@ -46,7 +47,7 @@ function rtcCreatePeer() {
   const rel = pc.createDataChannel('rel', RTC_REL_CHANNEL_OPTIONS);
   fast.binaryType = 'arraybuffer';
   rel.binaryType = 'arraybuffer';
-  return { pc, fast, rel, remoteReady: false, pendingCandidates: [], reportedUsable: false };
+  return { pc, fast, rel, remoteReady: false, pendingCandidates: [], reportedUsable: false, lastHostPingAt: -Infinity };
 }
 
 function rtcPeerUsable(peer) {
@@ -117,9 +118,27 @@ function rtcHostDrop(id, peer) {
   simHostSetP2P(id, false);
 }
 
-function rtcHostOnChannelMessage(id, data) {
+function rtcHostAnswerHostPing(id, c) {
+  const peer = rtcHostPeers.get(id);
+  if (!peer || !Number.isFinite(c) || !rtcPeerUsable(peer)) return;
+  const at = performance.now();
+  if (at - peer.lastHostPingAt < RTC_HOST_PING_MIN_INTERVAL_MS) return;
+  peer.lastHostPingAt = at;
+  try {
+    peer.rel.send(JSON.stringify({ t: 'hpong', c }));
+  } catch {
+    rtcHostDrop(id, peer);
+  }
+}
+
+function rtcHostOnChannelMessage(id, data, reliable) {
   if (typeof data !== 'string' || data.length > RTC_MAX_INPUT_BYTES) return;
-  const input = rtcSanitizeInput(rtcParseMessage(data));
+  const message = rtcParseMessage(data);
+  if (message && message.t === 'hping') {
+    if (reliable) rtcHostAnswerHostPing(id, message.c);
+    return;
+  }
+  const input = rtcSanitizeInput(message);
   if (input) simHostForwardGuestInput(id, input);
 }
 
@@ -128,8 +147,8 @@ function rtcHostOnOffer(from, sdp) {
   const peer = rtcCreatePeer();
   rtcHostPeers.set(from, peer);
   rtcAttachSignaling(peer, from, () => rtcHostSync(from, peer));
-  peer.fast.onmessage = event => rtcHostOnChannelMessage(from, event.data);
-  peer.rel.onmessage = event => rtcHostOnChannelMessage(from, event.data);
+  peer.fast.onmessage = event => rtcHostOnChannelMessage(from, event.data, false);
+  peer.rel.onmessage = event => rtcHostOnChannelMessage(from, event.data, true);
   peer.pc.setRemoteDescription({ type: 'offer', sdp })
     .then(() => { rtcMarkRemoteReady(peer); return peer.pc.createAnswer(); })
     .then(answer => peer.pc.setLocalDescription(answer))
@@ -225,7 +244,9 @@ function rtcGuestOnFastMessage(data) {
 
 function rtcGuestOnReliableMessage(data) {
   const message = rtcParseMessage(data);
-  if (message && message.t === 'we') netApplyWorldEvents(message.fx, message.ev);
+  if (!message) return;
+  if (message.t === 'we') netApplyWorldEvents(message.fx, message.ev);
+  else if (message.t === 'hpong') netStatsOnHostPong(net.stats, message.c, performance.now());
 }
 
 function rtcGuestConnect(hostId) {
@@ -262,6 +283,17 @@ function rtcGuestSendInput(cmd) {
   if (!rtcGuest.usable || !peer) return false;
   try {
     (rtcInputNeedsReliable(cmd) ? peer.rel : peer.fast).send(JSON.stringify(cmd));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rtcGuestSendHostPing(c) {
+  const peer = rtcGuest.peer;
+  if (!rtcGuest.usable || !peer) return false;
+  try {
+    peer.rel.send(JSON.stringify({ t: 'hping', c }));
     return true;
   } catch {
     return false;
