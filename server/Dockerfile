@@ -10,7 +10,8 @@ RUN npm install --omit=dev
 
 # poi il codice: il server + l'harness della simulazione autoritativa (Fase 2) e i
 # sorgenti della sim (staging in sim/, preparati da deploy-vps.sh copiando js/*.js)
-COPY index.js sim-runtime.js leaderboard.js boards.js ./
+COPY *.js ./
+COPY validators ./validators
 COPY sim ./sim
 
 # classifica condivisa: dati di runtime, montati da un volume (vedi docker-compose.yml).

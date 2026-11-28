@@ -85,7 +85,7 @@ function loop(nowT) {
 // =========================================================
 //  MAIN MENU · SETTINGS · HIGH SCORES · PAUSE
 // =========================================================
-const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'shiftPanel', 'settingsPanel', 'scoresPanel', 'lbPanel',
+const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'shiftPanel', 'settingsPanel', 'boardPanel',
                 'howtoPanel', 'mpPanel', 'publicPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
 const PUBLIC_GAMES_POLL_MS = 5000;
 const PUBLIC_GAMES_TICK_MS = 1000;
@@ -136,30 +136,18 @@ function saveScore() {
   store.set('scores', scores.slice(0, 10));
   return rank <= 10 ? rank : 0;
 }
-function renderScores() {
-  const body = $('#scoreTable tbody'), empty = $('#scoreEmpty');
-  if (!body) return;
+function renderScores(container) {
   const scores = store.get('scores', []);
-  $('#scoreTable').classList.toggle('hidden', scores.length === 0);
-  if (empty) empty.classList.toggle('hidden', scores.length > 0);
-  body.innerHTML = '';
-  scores.forEach((s, i) => {
-    const tr = document.createElement('tr');
-    const cells = [
-      ['', i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1],
-      ['nm', s.name],
-      ['sc', '$' + s.score],
-      ['', s.min > 0 ? t('common.min_short', { n: s.min }) : t('common.free')],
-      ['', new Date(s.date).toLocaleDateString(dateLocale(), { day: '2-digit', month: '2-digit' })],
-    ];
-    for (const [cls, txt] of cells) {
-      const td = document.createElement('td');
-      if (cls) td.className = cls;
-      td.textContent = txt;
-      tr.appendChild(td);
-    }
-    body.appendChild(tr);
-  });
+  if (!scores.length) { container.appendChild(createBoardMessage('scores.empty')); return; }
+  const { table, body } = createBoardTable(['#', t('scores.name'), t('scores.score'), t('scores.duration'), t('scores.date')]);
+  scores.forEach((s, i) => appendBoardRow(body, [
+    ['', boardRankLabel(i + 1)],
+    ['nm', s.name],
+    ['sc', '$' + s.score],
+    ['', s.min > 0 ? t('common.min_short', { n: s.min }) : t('common.free')],
+    ['', new Date(s.date).toLocaleDateString(dateLocale(), { day: '2-digit', month: '2-digit' })],
+  ]));
+  container.appendChild(table);
 }
 
 // ---- Shared online leaderboard (the server's, not this device's) ----
@@ -179,53 +167,37 @@ function fmtPlayed(ms) {
   return min >= 60 ? t('lb.dur_hm', { h: Math.floor(min / 60), m: String(min % 60).padStart(2, '0') })
                    : t('lb.dur_m', { m: min });
 }
-let lbFetching = false;
-async function renderLeaderboard() {
-  const table = $('#lbTable'), body = $('#lbTable tbody'), msg = $('#lbMsg'), note = $('#lbNote');
-  if (!table || !body || !msg) return;
-  const show = (key, params) => { table.classList.add('hidden'); note.classList.add('hidden');
-                                  msg.classList.remove('hidden'); msg.textContent = t(key, params); };
+async function renderLeaderboard(container) {
+  const message = createBoardMessage('lb.loading');
+  container.appendChild(message);
   const url = leaderboardUrl();
-  if (!url) { show('lb.noServer'); return; }
-  if (lbFetching) return;                       // a second tap while loading: one request is enough
-  lbFetching = true;
-  show('lb.loading');
+  if (!url) { message.textContent = t('lb.noServer'); return; }
   try {
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const rows = data.top || [];
-    if (!rows.length) { show('lb.empty'); return; }
-    body.innerHTML = '';
+    if (!rows.length) { message.textContent = t('lb.empty'); return; }
+    const { table, body } = createBoardTable(['#', t('lb.player'), t('lb.ppm'), t('lb.matches'), t('lb.time'), t('lb.best')], 'wide');
     const meKey = String(playerName || '').trim().toLowerCase();
-    for (const r of rows) {
-      const tr = document.createElement('tr');
-      if (String(r.name).trim().toLowerCase() === meKey) tr.className = 'me';
-      const cells = [
-        ['', r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : r.rank],
-        ['nm', r.name],
-        ['sc', r.ppm],
-        ['', r.matches],
-        ['', fmtPlayed(r.ms)],
-        ['', r.best ? r.best.ppm : '—'],
-      ];
-      for (const [cls, txt] of cells) {
-        const td = document.createElement('td');
-        if (cls) td.className = cls;
-        td.textContent = txt;
-        tr.appendChild(td);
-      }
-      body.appendChild(tr);
-    }
-    table.classList.remove('hidden');
-    msg.classList.add('hidden');
+    for (const r of rows) appendBoardRow(body, [
+      ['', boardRankLabel(r.rank)],
+      ['nm', r.name],
+      ['sc', r.ppm],
+      ['', r.matches],
+      ['', fmtPlayed(r.ms)],
+      ['', r.best ? r.best.ppm : '—'],
+    ], String(r.name).trim().toLowerCase() === meKey ? 'me' : '');
+    const note = document.createElement('div');
+    note.className = 'boardNote';
     // The qualifying threshold explains the absences: without it, "I played and I'm not
     // there" looks like a bug.
     note.textContent = t('lb.note') + ' ' + t('lb.qualify', { n: Math.round((data.qualifyMs || 0) / 60000) });
-    note.classList.remove('hidden');
+    container.textContent = '';
+    container.append(table, note);
   } catch (e) {
-    show('lb.error');
-  } finally { lbFetching = false; }
+    message.textContent = t('lb.error');
+  }
 }
 
 // ---- Pause (Esc, or the ⏸ button on touch) ----
@@ -400,12 +372,10 @@ onClick('settingsSave', () => {
   showMenu();
 });
 onClick('settingsBack', showMenu);
-onClick('scoresBtn', () => { renderScores(); showPanel('scoresPanel'); });
-onClick('scoresBack', showMenu);
 // The online leaderboard is shown FIRST and filled in when the reply arrives: the panel must
 // not wait on the network to open.
-onClick('lbBtn', () => { showPanel('lbPanel'); renderLeaderboard(); });
-onClick('lbBack', showMenu);
+onClick('boardBtn', () => { showPanel('boardPanel'); renderBoardPanel(); });
+onClick('boardBack', showMenu);
 onClick('howtoBtn', () => showPanel('howtoPanel'));
 onClick('howtoBack', showMenu);
 onClick('resumeBtn', togglePause);
