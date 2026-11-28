@@ -55,6 +55,10 @@
     switch (message.t) {
       case 'hp':
         return Number.isFinite(message.c) ? { t: 'hpo', c: message.c } : null;
+      case 'hping': {
+        const isGuest = typeof message.from === 'string' && message.from !== hostId && memberIds.has(message.from);
+        return isGuest && Number.isFinite(message.c) ? { t: 'hpong', c: message.c, to: message.from } : null;
+      }
       default:
         return null;
     }
@@ -189,7 +193,8 @@
         guestBaselines.delete(message.id);
         if (sim && memberIds.delete(message.id)) sim.removePlayer(message.id);
         break;
-      case 'hp': {
+      case 'hp':
+      case 'hping': {
         const reply = hostPingReply(message);
         if (reply) sendToServer(reply);
         break;
