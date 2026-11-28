@@ -176,8 +176,12 @@ console.log('# POST /runs/submit');
   const rejectedReplay = await post('/runs/submit', { token: forgedToken, name: 'Fede', log: { score: 10 } });
   ok(rejectedReplay.status === 422, 'a rejected token stays consumed');
 
-  const thrown = await post('/runs/submit', { token: await freshToken({}), name: 'Fede', log: { explode: true } });
-  ok(thrown.status === 422, 'a throwing validator answers rejected');
+  const thrownToken = await freshToken({});
+  const thrown = await post('/runs/submit', { token: thrownToken, name: 'Fede', log: { explode: true } });
+  ok(thrown.status === 500 && thrown.body.error === 'server_error', 'a throwing validator answers server_error');
+  ok(logLines.some(line => line.includes('validator-error') && line.includes('boom')), 'validator error logged server-side');
+  const retriedAfterThrow = await post('/runs/submit', { token: thrownToken, name: 'Fede', log: { score: 5 } });
+  ok(retriedAfterThrow.status === 200, 'a throwing validator does not consume the token');
 
   ok((await post('/runs/submit', { token: 'garbage', name: 'Fede', log: {} })).status === 401, 'bad token is 401');
   const expired = runs.issue({ mode: 'stub', roomCode: 'PTEST' }, Date.now() - runs.TOKEN_TTL_MS - 1000);
@@ -186,7 +190,7 @@ console.log('# POST /runs/submit');
 
   const nameToken = await freshToken({});
   for (const [badName, label] of [['‮evil', 'bidi override'], ['<script>', '<script>'], ['abcdefghijklmno', '15 chars'], ['', 'empty'],
-    ['   ', 'blank'], ['a​b', 'zero-width space'], ['ok\u0007', 'control char'], ['Fede\u{1F600}', 'emoji'], [42, 'number']]) {
+    ['   ', 'blank'], ['a​b', 'zero-width space'], ['a﻿b', 'BOM'], ['a b', 'no-break space'], ['a　b', 'ideographic space'], ['ok\u0007', 'control char'], ['Fede\u{1F600}', 'emoji'], [42, 'number']]) {
     const answer = await post('/runs/submit', { token: nameToken, name: badName, log: { score: 1 } });
     ok(answer.status === 400 && answer.body.error === 'bad_name', `bad name refused: ${label}`);
   }
@@ -194,6 +198,9 @@ console.log('# POST /runs/submit');
   ok(unicodeName.status === 200, 'bad names do not consume the token; letters, digits, space, apostrophe and dash pass');
   ok(api.normalizeName('äbc  d') === 'äbc d', 'NFC and whitespace collapse');
   ok(api.normalizeName('abcdefghijklmn') === 'abcdefghijklmn', '14 chars accepted');
+  ok(api.normalizeName('​ab') === null && api.normalizeName('ab‮') === null && api.normalizeName('﻿ab') === null, 'format chars refused');
+  ok(api.normalizeName(' ab') === null && api.normalizeName('a　b') === null, 'non-ASCII spaces refused');
+  ok(api.normalizeName(' \tab \t') === 'ab', 'surrounding space and tabs trimmed');
 
   const tinyToken = (await post('/runs/start', { mode: 'tiny', roomCode: 'PTEST' })).body.token;
   const tooBig = await post('/runs/submit', { token: tinyToken, name: 'Fede', log: { padding: 'x'.repeat(40) } });
@@ -253,7 +260,23 @@ console.log('# client IP and TRUST_PROXY');
   ok(api.clientIp({ headers: { 'x-real-ip': '1.2.3.4' }, socket: { remoteAddress: '127.0.0.1' } }) === '1.2.3.4', 'x-real-ip used with TRUST_PROXY=1');
   ok(api.clientIp({ headers: {}, socket: { remoteAddress: '127.0.0.1' } }) === '127.0.0.1', 'socket address when the header is missing');
   ok((await post('/runs/submit', { token: 'x' }, { ip: '10.7.1.1' })).status === 401, 'with TRUST_PROXY=1 each x-real-ip has its own bucket');
-  ok(/^[0-9a-f]{12}$/.test(api.hashIp('1.2.3.4')) && api.hashIp('1.2.3.4') !== api.hashIp('1.2.3.5'), '12-hex SHA-256 IP hash');
+  ok(/^[0-9a-f]{12}$/.test(api.hashIp('1.2.3.4')) && api.hashIp('1.2.3.4') !== api.hashIp('1.2.3.5'), '12-hex keyed IP hash');
+  ok(api.hashIp('1.2.3.4') === runs.keyedHash('1.2.3.4').slice(0, 12) && api.hashIp('1.2.3.4') !== require('node:crypto').createHash('sha256').update('1.2.3.4').digest('hex').slice(0, 12), 'IP hash is keyed with the run secret');
+  {
+    const globalRate = api.GLOBAL_BUCKET_RATES.submit;
+    const savedRate = { ...globalRate };
+    api._reset();
+    globalRate.burst = 2;
+    const keyedIp = '10.7.7.7';
+    for (let attempt = 0; attempt < 2; attempt++) await post('/runs/submit', { token: 'x' }, { ip: keyedIp });
+    const refusedByGlobal = [await post('/runs/submit', { token: 'x' }, { ip: keyedIp }), await post('/runs/submit', { token: 'x' }, { ip: keyedIp })];
+    ok(refusedByGlobal.every(answer => answer.status === 429), 'exhausted global submit bucket answers 429');
+    globalRate.perMinute = 60_000_000;
+    const afterRefill = [await post('/runs/submit', { token: 'x' }, { ip: keyedIp }), await post('/runs/submit', { token: 'x' }, { ip: keyedIp }), await post('/runs/submit', { token: 'x' }, { ip: keyedIp })];
+    Object.assign(globalRate, savedRate);
+    api._reset();
+    ok(afterRefill[0].status === 401 && afterRefill[1].status === 401 && afterRefill[2].status === 429, 'global refusals do not spend the IP token');
+  }
   for (let attempt = 0; attempt < 4; attempt++) await post('/runs/submit', { token: 'x' }, { ip: '10.6.6.6' });
   ok((await post('/runs/submit', { token: 'x' }, { ip: '10.6.6.6' })).status === 429, 'bucket exhausted before pruning');
   api.pruneIdleBuckets(Date.now() + 61_000);

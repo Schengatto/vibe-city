@@ -18,6 +18,7 @@ const ROOM_CODE_PATTERN = /^[A-Z0-9]{4,12}$/;
 const CHALLENGE_ID_PATTERN = /^(daily:\d{4}-\d{2}-\d{2}|weekly:\d{4}-W\d{2})$/;
 const MUTATOR_ID_PATTERN = /^[a-zA-Z0-9]{1,24}$/;
 const NAME_PATTERN = /^[\p{L}\p{N} ._'-]{1,14}$/u;
+const FORMAT_CHARS_PATTERN = /\p{Cf}/u;
 
 const ERROR_STATUS = {
   bad_request: 400, unsupported_mode: 400, bad_name: 400, challenge_mismatch: 400, mutators_not_allowed: 400,
@@ -55,7 +56,7 @@ function sendJson(res, status, payload, extraHeaders = {}) {
 function sendError(res, error, extraHeaders) {
   sendJson(res, ERROR_STATUS[error] || 400, { ok: false, error }, extraHeaders);
 }
-function sendErrorAndClose(req, res, error) {
+function sendErrorAndClose(res, error) {
   sendError(res, error, { connection: 'close' });
 }
 
@@ -63,20 +64,29 @@ function clientIp(req) {
   const forwarded = process.env.TRUST_PROXY === '1' ? String(req.headers['x-real-ip'] || '').trim() : '';
   return forwarded || req.socket.remoteAddress || 'unknown';
 }
-function hashIp(ip) { return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12); }
+function hashIp(ip) { return runs.keyedHash(ip).slice(0, 12); }
 
 function normalizeName(raw) {
   if (typeof raw !== 'string') return null;
-  const name = raw.normalize('NFC').trim().replace(/\s+/g, ' ');
+  const composed = raw.normalize('NFC');
+  if (FORMAT_CHARS_PATTERN.test(composed)) return null;
+  const name = composed.replace(/[ \t]+/g, ' ').replace(/^ | $/g, '');
   return NAME_PATTERN.test(name) ? name : null;
 }
 function matches(pattern, value) { return typeof value === 'string' && pattern.test(value); }
 
-function takeToken(bucket, rate, now) {
+function refillBucket(bucket, rate, now) {
   bucket.tokens = Math.min(rate.burst, bucket.tokens + ((now - bucket.at) * rate.perMinute) / MINUTE_MS);
   bucket.at = now;
-  if (bucket.tokens >= 1) { bucket.tokens -= 1; return 0; }
-  return Math.max(1, Math.ceil(((1 - bucket.tokens) * MINUTE_MS) / rate.perMinute / 1000));
+}
+function secondsUntilToken(bucket, rate) {
+  return bucket.tokens >= 1 ? 0 : Math.max(1, Math.ceil(((1 - bucket.tokens) * MINUTE_MS) / rate.perMinute / 1000));
+}
+function takeToken(bucket, rate, now) {
+  refillBucket(bucket, rate, now);
+  const wait = secondsUntilToken(bucket, rate);
+  if (!wait) bucket.tokens -= 1;
+  return wait;
 }
 function bucketIn(owner, bucketName, rate, now) {
   return owner[bucketName] || (owner[bucketName] = { tokens: rate.burst, at: now });
@@ -92,10 +102,16 @@ function bucketsOfIp(ip, now) {
 function retryAfterSeconds(ip, bucketName, now) {
   const rate = BUCKET_RATES[bucketName];
   if (!rate) return 0;
-  const ipWait = takeToken(bucketIn(bucketsOfIp(ip, now), bucketName, rate, now), rate, now);
   const globalRate = GLOBAL_BUCKET_RATES[bucketName];
-  if (ipWait || !globalRate) return ipWait;
-  return takeToken(bucketIn(globalBuckets, bucketName, globalRate, now), globalRate, now);
+  const globalBucket = globalRate && bucketIn(globalBuckets, bucketName, globalRate, now);
+  if (globalBucket) {
+    refillBucket(globalBucket, globalRate, now);
+    const globalWait = secondsUntilToken(globalBucket, globalRate);
+    if (globalWait) return globalWait;
+  }
+  const ipWait = takeToken(bucketIn(bucketsOfIp(ip, now), bucketName, rate, now), rate, now);
+  if (!ipWait && globalBucket) globalBucket.tokens -= 1;
+  return ipWait;
 }
 function pruneIdleBuckets(now = Date.now()) {
   for (const [ip, tracked] of trackedIps) {
@@ -150,13 +166,14 @@ function startRun(req, res, { body, now }) {
   return issued.token.length > runs.MAX_TOKEN_LENGTH ? BAD_REQUEST : { ok: true, ...issued };
 }
 
+const VALIDATOR_FAILURE = Object.freeze({ ok: false, reason: 'validator_error' });
 function logBytesExceeded(log, maxLogBytes) {
   return Boolean(maxLogBytes) && Buffer.byteLength(JSON.stringify(log ?? null)) > maxLogBytes;
 }
 function runVerdict(ctx) {
   try { return validateRun(ctx) || { ok: false, reason: 'no_verdict' }; } catch (error) {
     log('validator-error', ctx.run.mode, error && error.message);
-    return { ok: false, reason: 'validator_error' };
+    return VALIDATOR_FAILURE;
   }
 }
 function writeBoards(verdict, name, now) {
@@ -178,6 +195,7 @@ function submitRun(req, res, { body, now, ip }) {
   if (!name) return { ok: false, error: 'bad_name' };
   if (logBytesExceeded(body.log, validatorFor(run.mode)?.maxLogBytes)) return { ok: false, error: 'too_large' };
   const verdict = runVerdict({ run, log: body.log, name, now });
+  if (verdict === VALIDATOR_FAILURE) return { ok: false, error: 'server_error' };
   let response;
   if (verdict.ok) response = writeBoards(verdict, name, now);
   else {
@@ -208,7 +226,7 @@ async function dispatch(req, res, route, url) {
   let body = null;
   if (req.method === 'POST') {
     const parsed = await readJsonBody(req);
-    if (parsed.error) return sendErrorAndClose(req, res, parsed.error);
+    if (parsed.error) return sendErrorAndClose(res, parsed.error);
     body = parsed.body;
   }
   const retryAfter = retryAfterSeconds(ip, route.bucketName, Date.now());

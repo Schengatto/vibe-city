@@ -22,6 +22,7 @@ function resolveSecret() {
 const SECRET = resolveSecret();
 
 function sign(payloadPart) { return crypto.createHmac('sha256', SECRET).update(payloadPart).digest(); }
+function keyedHash(value) { return crypto.createHmac('sha256', SECRET).update(`hash:${value}`).digest('hex'); }
 
 function issue({ mode, job, roomCode, challengeId, race, mutators } = {}, now = Date.now()) {
   const payload = { v: TOKEN_VERSION, n: crypto.randomBytes(16).toString('hex'), s: now, m: mode, r: roomCode };
@@ -63,4 +64,4 @@ function verify(token, now = Date.now()) {
 function storedResponse(run) { return boards.lookupNonce(run.nonce); }
 function consumeRun(run, response) { return boards.consumeNonce(run.nonce, run.startedAt + TOKEN_TTL_MS, response); }
 
-module.exports = { issue, verify, storedResponse, consumeRun, TOKEN_TTL_MS, TOKEN_VERSION, MAX_TOKEN_LENGTH };
+module.exports = { issue, verify, storedResponse, consumeRun, keyedHash, TOKEN_TTL_MS, TOKEN_VERSION, MAX_TOKEN_LENGTH };
