@@ -28,6 +28,8 @@ const HOST_LINK_PING_MS = 300;
 const HOST_PING_ECHO_DELAY_MS = 150;
 const HOST_PING_REPLAY_COUNT = 20;
 const ROOM_ROW_POLL_MS = 100;
+const HOST_PING_MIN_INTERVAL_MS = 1000;
+const CAPPED_HOST_PING_COUNT = 5;
 const ABNORMAL_CLOSE_CODE = 1006;
 const HOST_LINK_FLOOD_COUNT = 2000;
 const HOST_LINK_LEGIT_BURST = 300;
@@ -750,6 +752,41 @@ try {
   check(pingElection && pingElection.id === pingGuest.id && newHostRow && newHostRow.hostRttMs === null, 'a new host starts unmeasured');
   closeAll([pingHost.ws, pingLink, pingGuest.ws]);
 
+  console.log('host ping relay');
+  const relayHost = await createRoom('HPONG1', 'Hana');
+  const relayLink = await openHostLink('HPONG1', relayHost.token);
+  await waitFor(() => findType(relayLink, 'hoststart'));
+  const relayGuest = await joinRoom('HPONG1', 'Bert');
+  const relayBystander = await joinRoom('HPONG1', 'Cleo');
+  const hostLinkPings = () => relayLink.inbox.filter(message => message.t === 'hping');
+  const hostPongs = ws => ws.inbox.filter(message => message.t === 'hpong');
+  send(relayGuest.ws, { t: 'hping', c: 11, junk: 1 });
+  const forwardedHostPing = await waitFor(() => hostLinkPings().find(message => message.c === 11));
+  check(JSON.stringify(forwardedHostPing) === JSON.stringify({ t: 'hping', c: 11, from: relayGuest.id }), 'a guest hping reaches the host link with from');
+  send(relayHost.ws, { t: 'hping', c: 12 });
+  send(relayGuest.ws, { t: 'hping', c: 'x' });
+  await wait(HOST_PING_MIN_INTERVAL_MS);
+  check(!hostLinkPings().some(message => message.c === 12 || message.c === 'x'), 'hping from the host or without numeric c is not forwarded');
+  for (let pingIndex = 0; pingIndex < CAPPED_HOST_PING_COUNT; pingIndex++) send(relayGuest.ws, { t: 'hping', c: 21 + pingIndex });
+  await wait(SILENCE_MS);
+  const cappedPings = hostLinkPings().filter(message => message.c >= 21);
+  check(cappedPings.length === 1 && cappedPings[0].c === 21, 'hping is capped at one per second per guest');
+  send(relayLink, { t: 'hpong', c: 21, to: relayGuest.id, extra: 1 });
+  const relayedPong = await waitFor(() => hostPongs(relayGuest.ws)[0]);
+  await wait(SILENCE_MS);
+  check(JSON.stringify(relayedPong) === JSON.stringify({ t: 'hpong', c: 21 }) && hostPongs(relayBystander.ws).length === 0,
+    'hpong goes only to the guest named in to, stripped');
+  send(relayLink, { t: 'hpong', c: 21, to: relayGuest.id });
+  send(relayLink, { t: 'hpong', c: 21, to: relayBystander.id });
+  send(relayLink, { t: 'hpong', c: 21, to: relayHost.id });
+  send(relayLink, { t: 'hpong', c: 21, to: 'p99' });
+  await wait(SILENCE_MS);
+  check(hostPongs(relayGuest.ws).length === 1, 'one hpong per hping');
+  check(hostPongs(relayBystander.ws).length === 0 && hostPongs(relayHost.ws).length === 0 && !relayLink.closed, 'unsolicited hpong is dropped');
+  const hostPongIndex = hostLinkMessageSource.indexOf("'hpong'");
+  check(hostPongIndex > 0 && frameClockIndex > hostPongIndex, 'hpong is handled before the frame clock');
+  closeAll([relayHost.ws, relayLink, relayGuest.ws, relayBystander.ws]);
+
   console.log('server mode keeps the old handshake');
   const serverModePlayer = await enter(SERVER_MODE_PORT, { t: 'create', code: 'SRVM01', name: 'Sam', max: 8, minutes: 0 });
   check(serverModePlayer.ok && serverModePlayer.ok.sim === true && !('host' in serverModePlayer.ok), 'ok has sim true and no host field');
@@ -759,6 +796,10 @@ try {
   send(serverModeLink, { t: 'ping' });
   check(await waitFor(() => findType(serverModeLink, 'pong')) && !serverModeLink.closed, 'a hostlink sent on a game socket is ignored in server mode');
   check(!findType(serverModeLink, 'hoststart'), 'no hoststart in server mode');
+  send(serverModePlayer.ws, { t: 'hping', c: 1 });
+  send(serverModePlayer.ws, { t: 'ping', c: 2 });
+  const serverModePong = await waitFor(() => findMessage(serverModePlayer.ws, message => message.t === 'pong' && message.c === 2));
+  check(serverModePong && !findType(serverModePlayer.ws, 'hpong'), 'server-sim rooms ignore hping and keep answering ping');
   closeAll([serverModePlayer.ws, serverModeLink]);
 
   console.log('police room option');

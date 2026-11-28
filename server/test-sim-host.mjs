@@ -128,7 +128,7 @@ ok(decodeBinary(5) === null && decodeBinary(null) === null && decodeBinary([1, 2
 ok(vm.runInContext('netDecodeBinarySnapshot(new Uint8Array([1, 2, 3, 4]).buffer)', codecContext) === null, 'garbage binary bytes are rejected');
 
 function createNetGuestHarness({ guestSendResult = false, hostActive = false } = {}) {
-  const calls = { netSend: [], simHostSendInput: [], rtcGuestSendInput: [], rtcGuestConnect: [], rtcGuestClose: 0, rtcHostSignal: [], rtcGuestSignal: [], toasts: [] };
+  const calls = { netSend: [], simHostSendInput: [], rtcGuestSendInput: [], rtcGuestConnect: [], rtcGuestClose: 0, rtcHostSignal: [], rtcGuestSignal: [], toasts: [], rtcGuestSendHostPing: [], hostPongs: [], hostRttResets: 0 };
   const context = vm.createContext({
     net: { hostId: null, myId: 'p1', authoritative: true, lastSnapTick: 10, snapshotRing: new Map(), snapshotAckTick: null, snap: 'previous', inSeq: 0, firePending: false, enterEdge: false, hornEdge: false, weaponReq: null, lastVR: 0, stats: {} },
     performance, player: { x: 0, y: 0, car: null }, vw: 800, vh: 600, mDownL: false,
@@ -144,8 +144,12 @@ function createNetGuestHarness({ guestSendResult = false, hostActive = false } =
     rtcGuestOnSignal: (from, k, d) => calls.rtcGuestSignal.push([from, k, d]),
     rtcFreshSnapshot: (lastTick, tick) => !Number.isFinite(tick) || tick > lastTick,
     toast: message => calls.toasts.push(message), t: key => key,
+    netActive: () => true,
+    rtcGuestSendHostPing: c => { calls.rtcGuestSendHostPing.push(c); return guestSendResult; },
+    netStatsOnHostPong: (stats, c) => calls.hostPongs.push(c),
+    netStatsResetHostRtt: () => { calls.hostRttResets++; },
   });
-  const names = ['netSendInput', 'netOnSnapshot', 'netSyncHostRole', 'onServerMessage', 'netResetSnapshotBaseline', 'netResolveSnapshot'];
+  const names = ['netSendInput', 'netOnSnapshot', 'netSyncHostRole', 'onServerMessage', 'netResetSnapshotBaseline', 'netResolveSnapshot', 'netSendHostPing', 'netHostPingRole'];
   const declarations = names.map(name => extractTopLevel(netSource, name)).join('\n');
   vm.runInContext(fs.readFileSync(path.join(JS_DIR, 'snapshot-delta.js'), 'utf8'), context);
   vm.runInContext(declarations + '\n;globalThis.api = { ' + names.join(', ') + ' };', context);
@@ -209,6 +213,30 @@ ok(signalAsGuest.calls.rtcGuestSignal.length === 1 && signalAsGuest.calls.rtcHos
 const signalAsHost = createNetGuestHarness({ hostActive: true });
 signalAsHost.api.onServerMessage({ t: 'rtc', from: 'p2', k: 'offer', d: 'sdp' });
 ok(signalAsHost.calls.rtcHostSignal.length === 1 && signalAsHost.calls.rtcGuestSignal.length === 0, 'rtc signaling goes to the host side when hosting');
+
+const hostPingOverWs = createNetGuestHarness({ guestSendResult: false });
+hostPingOverWs.net.hostId = 'p3';
+hostPingOverWs.api.netSendHostPing();
+const wsHostPings = hostPingOverWs.calls.netSend.filter(message => message.t === 'hping');
+ok(hostPingOverWs.calls.rtcGuestSendHostPing.length === 1 && wsHostPings.length === 1 && Number.isFinite(wsHostPings[0].c), 'hping falls back to the WebSocket');
+const hostPingOverP2P = createNetGuestHarness({ guestSendResult: true });
+hostPingOverP2P.net.hostId = 'p3';
+hostPingOverP2P.api.netSendHostPing();
+ok(hostPingOverP2P.calls.rtcGuestSendHostPing.length === 1 && hostPingOverP2P.calls.netSend.length === 0, 'hping goes on rel when P2P is up');
+const hostPingAsHost = createNetGuestHarness();
+hostPingAsHost.net.hostId = 'p1';
+hostPingAsHost.api.netSendHostPing();
+const hostPingInServerSim = createNetGuestHarness();
+hostPingInServerSim.api.netSendHostPing();
+ok([hostPingAsHost, hostPingInServerSim].every(harness => harness.calls.rtcGuestSendHostPing.length === 0 && harness.calls.netSend.length === 0),
+  'host and server-sim rooms send no hping');
+const hostPongReceiver = createNetGuestHarness();
+hostPongReceiver.api.onServerMessage({ t: 'hpong', c: 9 });
+ok(hostPongReceiver.calls.hostPongs.join() === '9', 'a WebSocket hpong reaches netStatsOnHostPong');
+const hostRttReset = createNetGuestHarness();
+hostRttReset.api.onServerMessage({ t: 'host', id: 'p3', name: 'Zed' });
+hostRttReset.api.onServerMessage({ t: 'host', id: 'p3', name: 'Zed' });
+ok(hostRttReset.calls.hostRttResets === 1, 'host RTT resets only when the host changes');
 
 ok(/function netShutdown\(\) \{[\s\S]*?rtcGuestClose\(\);[\s\S]*?\n\}/.test(netSource), 'netShutdown closes the guest link');
 

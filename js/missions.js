@@ -9,7 +9,7 @@ const taxi = { phase: 'idle', fare: null, dest: null, pay: 0, timer: 0, timer0: 
 const taxiActive = () => taxi.phase !== 'idle';
 const taxiTarget = () => taxi.phase === 'pickup' ? taxi.fare : taxi.dest;
 function spawnFare() {
-  const p = randomPublicSidewalkNear(player.x, player.y, 500, 1600);
+  const p = randomPublicSidewalkNear(player.x, player.y, 500, 1600, jobRandom);
   if (!p) { taxi.waitCd = 60; return; }
   const f = makePed(p.x, p.y, 'fare');
   f.speed = 0; f.dir = { x: 0, y: 0 };
@@ -20,7 +20,7 @@ function spawnFare() {
 function startRide() {
   const f = taxi.fare;
   let d = null;                                       // destination: a distant point on a road
-  for (let r = 2400; r >= 800 && !d; r -= 400) d = randomPublicRoadNear(f.x, f.y, r * 0.6, r);
+  for (let r = 2400; r >= 800 && !d; r -= 400) d = randomPublicRoadNear(f.x, f.y, r * 0.6, r, jobRandom);
   if (!d) { cancelTaxi(); taxi.waitCd = 120; return; }
   const i = peds.indexOf(f); if (i >= 0) peds.splice(i, 1);       // the fare gets in
   taxi.fare = null; taxi.phase = 'ride'; taxi.dest = { x: d.x, y: d.y };
@@ -81,7 +81,7 @@ function spawnOrder() {
   }
   if (!shop) { pizza.waitCd = 300; return; }
   // The hungry customer waits on a pavement not too close to the shop.
-  const p = randomPublicSidewalkNear(shop.door.x, shop.door.y, 600, 1800);
+  const p = randomPublicSidewalkNear(shop.door.x, shop.door.y, 600, 1800, jobRandom);
   if (!p) { pizza.waitCd = 60; return; }
   const cl = makePed(p.x, p.y, 'hungry');
   cl.speed = 0; cl.dir = { x: 0, y: 0 };
@@ -142,7 +142,7 @@ const rescue = { phase: 'idle', patient: null, hosp: null, pay: 0, timer: 0, tim
 const rescueActive = () => rescue.phase !== 'idle';
 const rescueTarget = () => rescue.phase === 'pickup' ? rescue.patient : (rescue.hosp && rescue.hosp.door);
 function spawnEmergency() {
-  const p = randomPublicSidewalkNear(player.x, player.y, 600, 1800);
+  const p = randomPublicSidewalkNear(player.x, player.y, 600, 1800, jobRandom);
   if (!p) { rescue.waitCd = 60; return; }
   const inj = makePed(p.x, p.y, 'injured');
   inj.speed = 0; inj.dir = { x: 0, y: 0 };
@@ -177,7 +177,7 @@ function completeRescue() {
   rescue.jobs++;
   toast(tip > 0 ? t('rescue.doneTip', { pay: rescue.pay, tip }) : t('rescue.done', { pay: rescue.pay }));
   const d = rescue.hosp.door;                         // the patient, treated, walks away
-  peds.push(makePed(d.x + rnd(-10, 10), d.y + rnd(-10, 10), 'civ'));
+  peds.push(makePed(d.x + jobRnd(-10, 10), d.y + jobRnd(-10, 10), 'civ'));
   rescue.phase = 'idle'; rescue.hosp = null; rescue.waitCd = 180;
 }
 function cancelRescue(msg, reason) {
@@ -211,9 +211,9 @@ function spawnCrime() {
   // Crime scene: the nearest bank or market in range, otherwise a pavement.
   const spots = landmarks.filter(l => (l.type === 'bank' || l.type === 'market') &&
     dist(l.door.x, l.door.y, player.x, player.y) < 2400);
-  const lm = spots.length ? pick(spots) : null;
+  const lm = spots.length ? jobPick(spots) : null;
   const cx = lm ? lm.door.x : player.x, cy = lm ? lm.door.y : player.y;
-  const p = randomPublicSidewalkNear(cx, cy, lm ? 60 : 600, lm ? 260 : 1600);
+  const p = randomPublicSidewalkNear(cx, cy, lm ? 60 : 600, lm ? 260 : 1600, jobRandom);
   if (!p) { patrol.waitCd = 60; return; }
   const r = makePed(p.x, p.y, 'robber');
   r.shirt = '#2e2e34'; r.hair = '#1a1a1e';            // dressed in dark colours, a proper crook
@@ -265,9 +265,9 @@ function updatePatrol() {
 const firejob = { phase: 'idle', site: null, pay: 0, timer: 0, timer0: 1, legDistance: 0, waitCd: 0, jobs: 0 };
 const firejobActive = () => firejob.phase !== 'idle';
 function spawnFire() {
-  const p = randomPublicSidewalkNear(player.x, player.y, 600, 1800);
+  const p = randomPublicSidewalkNear(player.x, player.y, 600, 1800, jobRandom);
   if (!p) { firejob.waitCd = 60; return; }
-  const site = { x: p.x, y: p.y, r: 26, hp: 140, seed: rnd(0, TAU) };
+  const site = { x: p.x, y: p.y, r: 26, hp: 140, seed: jobRnd(0, TAU) };
   fires.push(site);
   firejob.phase = 'extinguish'; firejob.site = site;
   const d = dist(player.x, player.y, p.x, p.y);
