@@ -27,11 +27,11 @@ const fareTip = (pay, timerLeft) => timerLeft > 0 ? Math.ceil(pay * 0.5 / 5) * 5
 const quickBonus = (pay, timerLeft, timerTotal) => timerLeft > timerTotal * 0.5 ? 20 : 0;
 
 const JOB_RULES = {
-  taxi: { maxDistance: 2500, pay: steppedPay(15, 0.022), timer: scaledTimer(2.5, 240), tip: fareTip, pickup: true },
-  pizza: { maxDistance: 1900, pay: steppedPay(20, 0.025), timer: scaledTimer(2.6, 240), tip: fareTip, pickup: true },
-  ambulance: { maxDistance: null, pay: steppedPay(30, 0.03), timer: scaledTimer(2.5, 240), tip: fareTip, pickup: true },
-  patrol: { maxDistance: 2700, pay: () => 45, payTolerance: 0, timer: scaledTimer(2.2, 840), tip: quickBonus, pickup: false },
-  fire: { maxDistance: 1900, pay: steppedPay(35, 0.02), timer: scaledTimer(2.2, 960), tip: quickBonus, pickup: false },
+  taxi: { minDistance: 390, maxDistance: 2500, pay: steppedPay(15, 0.022), timer: scaledTimer(2.5, 240), tip: fareTip, pickup: true },
+  pizza: { minDistance: 570, maxDistance: 1900, pay: steppedPay(20, 0.025), timer: scaledTimer(2.6, 240), tip: fareTip, pickup: true },
+  ambulance: { minDistance: 0, maxDistance: null, pay: steppedPay(30, 0.03), timer: scaledTimer(2.5, 240), tip: fareTip, pickup: true },
+  patrol: { minDistance: 0, maxDistance: 2700, pay: () => 45, payTolerance: 0, timer: scaledTimer(2.2, 840), tip: quickBonus, pickup: false },
+  fire: { minDistance: 570, maxDistance: 1900, pay: steppedPay(35, 0.02), timer: scaledTimer(2.2, 960), tip: quickBonus, pickup: false },
 };
 
 const SHIFT_RULES_VERSIONS = new Map([[1, 'score']]);
@@ -67,7 +67,7 @@ const FIELD_CHECKS = {
 function parseEvent(tuple, minFrame, maxFrame, world) {
   if (!Array.isArray(tuple)) return null;
   const [type, frame, ...values] = tuple;
-  const fields = Object.hasOwn(TUPLE_FIELDS, type) ? TUPLE_FIELDS[type] : null;
+  const fields = typeof type === 'string' && Object.hasOwn(TUPLE_FIELDS, type) ? TUPLE_FIELDS[type] : null;
   if (!fields || values.length !== fields.length || !isInt(frame, minFrame, maxFrame)) return null;
   if (!fields.every((field, index) => FIELD_CHECKS[field](values[index], world))) return null;
   return Object.fromEntries([['type', type], ['frame', frame], ...fields.map((field, index) => [field, values[index]])]);
@@ -88,10 +88,11 @@ function completionFailure(completion, openJob, rule, timerScale, distanceCap) {
   const { start, pickupFrame } = openJob;
   const { pay, tip, timerLeft, timerTotal, distance } = completion;
   if (pay !== start.pay || timerTotal !== start.timerTotal || timerLeft > timerTotal) return 'formula';
+  if (timerLeft > Math.max(0, timerTotal - (completion.frame - start.frame)) + TIMER_TOLERANCE) return 'formula';
   if (Math.abs(pay - rule.pay(distance)) > (rule.payTolerance ?? PAY_TOLERANCE)) return 'formula';
   if (Math.abs(timerTotal - rule.timer(distance, timerScale)) > TIMER_TOLERANCE) return 'formula';
   if (tip !== rule.tip(pay, timerLeft, timerTotal)) return 'formula';
-  if (distance > distanceCap) return 'distance';
+  if (distance < rule.minDistance || distance > distanceCap) return 'distance';
   if (completion.frame - (pickupFrame ?? start.frame) < Math.ceil(distance / MAX_TRAVEL_PX_PER_FRAME)) return 'travel';
   return null;
 }

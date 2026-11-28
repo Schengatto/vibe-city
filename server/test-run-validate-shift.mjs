@@ -132,6 +132,7 @@ console.log('# events');
   const appended = tuple => mutated(log, copy => { copy.events.push(tuple); });
   ok(reasonOf(appended(['k', lastFrame(log), 'cop'])) === 'events', 'kill tuple k -> events');
   ok(reasonOf(appended(['zz', lastFrame(log)])) === 'events', 'unknown tuple -> events');
+  ok(reasonOf(appended([['vd'], lastFrame(log), 12])) === 'events', 'array type coerced to a known name -> events');
   ok(reasonOf(appended(['jp', lastFrame(log), 10, 10, 10])) === 'events', 'wrong arity -> events');
   ok(reasonOf(appended(['vd', lastFrame(log) - 1, 12])) === 'events', 'decreasing frame -> events');
   ok(reasonOf(appended(['vd', SHIFT_FRAMES + 1, 12])) === 'events', 'frame beyond log.frames -> events');
@@ -177,6 +178,17 @@ for (const job of JOBS) {
   ok(reasonOf(mutated(taxiLog, copy => { copy.events[2][5] += 5; })) === 'formula', 'wrong tip -> formula');
   ok(reasonOf(mutated(taxiLog, copy => { copy.events[2][4] += 5; })) === 'formula', 'jc pay differs from js pay -> formula');
   ok(reasonOf(mutated(taxiLog, copy => { copy.events[2][6] = copy.events[2][7] + 1; })) === 'formula', 'timerLeft above timerTotal -> formula');
+  const withFirstTimerLeft = (log, timerLeftOf) => mutated(log, copy => {
+    const completion = copy.events.find(tuple => tuple[0] === 'jc');
+    completion[6] = timerLeftOf(completion);
+    copy.score = copy.events.filter(tuple => tuple[0] === 'jc').reduce((sum, [, , , , pay, tip, timerLeft, timerTotal]) =>
+      sum + jobScore({ job: copy.job, pay, tip, timerLeft, timerTotal }), 0);
+  });
+  ok(reasonOf(withFirstTimerLeft(taxiLog, completion => completion[7])) === 'formula', 'taxi: timerLeft = timerTotal after travel frames -> formula');
+  ok(reasonOf(withFirstTimerLeft(shiftLog('patrol'), completion => completion[7])) === 'formula', 'patrol: timerLeft = timerTotal after travel frames -> formula');
+  ok(reasonOf(withFirstTimerLeft(taxiLog, completion => completion[6] + 3)) === 'formula', 'taxi: timerLeft 3 above the frames elapsed -> formula');
+  ok(verdictOf(withFirstTimerLeft(taxiLog, completion => completion[6] + 2)).ok, 'taxi: timerLeft 2 above the frames elapsed within tolerance');
+  ok(verdictOf(withFirstTimerLeft(shiftLog('patrol'), completion => completion[6] - 1)).ok, 'patrol: timerLeft one below the frames elapsed accepted');
   ok(reasonOf(mutated(shiftLog('fire'), copy => { copy.events[1][5] = 0; })) === 'formula', 'fire: missing quick bonus -> formula');
 }
 
@@ -187,6 +199,13 @@ console.log('# distance caps');
     ok(reasonOf(shiftLog(job, { firstJob: { distance: caps[job] + 1 } })) === 'distance', `${job}: distance ${caps[job] + 1} above cap -> distance`);
   }
   ok(verdictOf(shiftLog('patrol', { firstJob: { distance: 2680 } })).ok, 'patrol: landmark crime at 2680 px accepted');
+  const floors = { taxi: 390, pizza: 570, fire: 570 };
+  for (const [job, floor] of Object.entries(floors)) {
+    ok(reasonOf(shiftLog(job, { firstJob: { distance: floor - 1 } })) === 'distance', `${job}: distance ${floor - 1} below the spawn-ring floor -> distance`);
+    ok(verdictOf(shiftLog(job, { firstJob: { distance: floor } })).ok, `${job}: distance ${floor} at the floor accepted`);
+  }
+  ok(verdictOf(shiftLog('ambulance', { firstJob: { distance: 40 } })).ok, 'ambulance: no distance floor (injured next to a hospital)');
+  ok(verdictOf(shiftLog('patrol', { firstJob: { distance: 40 } })).ok, 'patrol: no distance floor (crime at a landmark next to the player)');
 }
 
 console.log('# travel and pacing');
