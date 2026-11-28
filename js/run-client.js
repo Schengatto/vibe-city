@@ -78,9 +78,14 @@ function showRunBoardStatus(state, details) {
   element.classList.remove('hidden');
 }
 
+function hideRunBoardStatus() {
+  const element = $('#runBoardStatus');
+  if (element) element.classList.add('hidden');
+}
+
 async function submitShiftRun(session, log, job) {
   if (!log) return showRunBoardStatus('tooLong');
-  if (!(log.score > 0)) return;
+  if (!(log.score > 0)) return hideRunBoardStatus();
   if (!String(playerName || '').trim()) return showRunBoardStatus('noName');
   if (Date.now() - session.startedLocally > log.frames * RUN_FRAME_MS + RUN_PAUSE_BUDGET_MS) return showRunBoardStatus('pausedTooLong');
   showRunBoardStatus('sending');
