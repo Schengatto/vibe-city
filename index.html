@@ -447,6 +447,9 @@
   #mpBadge { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:5;
     font-size:14px; background:rgba(0,0,0,.45); padding:4px 14px; border-radius:14px; white-space:nowrap; }
   #mpBadge b { color:#ffd23a; letter-spacing:2px; }
+  #mpBadge .ping { margin-left:10px; }
+  #mpBadge .ping.host i { display:none; }
+  #mpBadge .ping.host span { color:#ffd23a; letter-spacing:1px; }
   body.touch #mpBadge { top:auto; bottom:calc(10px + env(safe-area-inset-bottom,0px));
     left:calc(12px + env(safe-area-inset-left,0px)); transform:none; font-size:11px; padding:3px 10px; }
   /* Bounty on your own head: it pulses while active. */
@@ -557,7 +560,7 @@
 
   <div id="shiftHud" class="hidden"></div>
 
-  <div id="mpBadge" class="hidden"></div>
+  <div id="mpBadge" class="hidden"><span id="mpBadgeText"></span><span id="mpPing" class="ping off"><i></i><span id="mpPingValue">—</span></span></div>
   <div id="bountyBadge" class="hidden"></div>
 
   <div id="status">

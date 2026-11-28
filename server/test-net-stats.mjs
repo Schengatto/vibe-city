@@ -11,12 +11,17 @@ const NET_STATS_NAMES = [
   'INTERP_STEP_MS', 'netInterpDelayTarget', 'netInterpDelayStep', 'NET_STATS_SMOOTHING', 'NET_STATS_WINDOW_MS', 'NET_STATS_HOST_HZ_MIN_SPAN_MS', 'NET_STATS_PENDING_INPUTS',
   'createNetStats', 'netStatsSmooth', 'netStatsOnPong', 'netStatsOnInputSent', 'netStatsOnAck',
   'netStatsOnTick', 'netStatsSnapshotWindow', 'netStatsOnSnapshot', 'netStatsLines',
-  'NET_HOST_PING_MS', 'netStatsOnHostPong', 'netStatsResetHostRtt', 'netHostPingRole',
+  'NET_HOST_PING_MS', 'netStatsOnHostPong', 'netStatsResetHostRtt', 'netHostPingRole', 'netPingBadgeView',
 ];
+const PING_BAND_NAMES = ['PING_MID_MS', 'PING_BAD_MS', 'pingBandClass'];
 
 function loadNetStats() {
   const netSource = readSource('net.js');
-  const declarations = NET_STATS_NAMES.map(name => extractTopLevel(netSource, name)).join('\n');
+  const publicGamesSource = readSource('public-games.js');
+  const declarations = [
+    ...PING_BAND_NAMES.map(name => extractTopLevel(publicGamesSource, name)),
+    ...NET_STATS_NAMES.map(name => extractTopLevel(netSource, name)),
+  ].join('\n');
   const context = vm.createContext({});
   vm.runInContext(declarations + '\n;globalThis.api = { ' + NET_STATS_NAMES.join(', ') + ' };', context);
   return context.api;
@@ -56,6 +61,28 @@ function testHostPingRole() {
   ok(api.netHostPingRole({ hostId: 'p1', myId: 'p1' }) === 'host', 'the room host has the host role');
   ok(api.netHostPingRole({ hostId: null, myId: 'p2' }) === 'server', 'a room without a host has the server role');
   ok(api.netHostPingRole({ hostId: 'p1', myId: 'p2' }) === 'guest', 'any other player has the guest role');
+}
+
+function testPingBadgeView() {
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const guestView = hostRtt => api.netPingBadgeView('guest', { ...api.createNetStats(), hostRtt }, 'HOST');
+  ok(same(api.netPingBadgeView('host', api.createNetStats(), 'HOST'), { text: 'HOST', band: 'host' }), 'the host sees the host label');
+  ok(same(guestView(48.4), { text: '48 ms', band: '' }), 'a fast host ping is green and rounded');
+  ok(guestView(120).band === 'mid' && guestView(200).band === 'bad', 'slower host pings are yellow then red');
+  ok(same(guestView(null), { text: '—', band: 'off' }), 'no host sample yet shows a dash with the dot off');
+  ok(same(api.netPingBadgeView('server', { ...api.createNetStats(), rtt: 30, hostRtt: 500 }, 'HOST'), { text: '30 ms', band: '' }),
+    'server-sim rooms show the VPS RTT');
+}
+
+function testPingBadgeWiring() {
+  const netSource = readSource('net.js');
+  const refreshBadgeSource = extractTopLevel(netSource, 'netRefreshBadge');
+  const refreshPingSource = extractTopLevel(netSource, 'netRefreshPingBadge');
+  ok(refreshBadgeSource.includes("'mpBadgeText'") && refreshBadgeSource.includes('netRefreshPingBadge()'),
+    'netRefreshBadge writes mpBadgeText and refreshes the ping');
+  ok(refreshPingSource.length > 0 && !refreshPingSource.includes('innerHTML'), 'netRefreshPingBadge never uses innerHTML');
+  ok(netSource.includes('setInterval(netHostPingTick, NET_HOST_PING_MS)'), 'the host ping ticks every NET_HOST_PING_MS');
+  ok(/<div id="mpBadge"[^>]*>(?:(?!<\/div>)[\s\S])*id="mpPing"/.test(readSource('../index.html')), 'mpPing sits inside mpBadge');
 }
 
 function testInputRoundTrip() {
@@ -242,6 +269,8 @@ async function testServerPongEcho() {
 testRttSmoothing();
 testHostRttSmoothing();
 testHostPingRole();
+testPingBadgeView();
+testPingBadgeWiring();
 testInputRoundTrip();
 testSnapshotWindow();
 testHostRate();

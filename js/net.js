@@ -835,6 +835,25 @@ function netSendHostPing() {
   const c = performance.now();
   if (!rtcGuestSendHostPing(c)) netSend({ t: 'hping', c });
 }
+function netPingBadgeView(role, stats, hostLabel) {
+  if (role === 'host') return { text: hostLabel, band: 'host' };
+  const value = role === 'server' ? stats.rtt : stats.hostRtt;
+  if (value === null) return { text: '—', band: 'off' };
+  return { text: Math.round(value) + ' ms', band: pingBandClass(value) };
+}
+function netRefreshPingBadge() {
+  const pingEl = document.getElementById('mpPing');
+  const valueEl = document.getElementById('mpPingValue');
+  if (!netActive() || !pingEl || !valueEl) return;
+  const view = netPingBadgeView(netHostPingRole(net), net.stats, t('net.pingHost'));
+  pingEl.className = ('ping ' + view.band).trim();
+  pingEl.title = t('net.pingTitle');
+  valueEl.textContent = view.text;
+}
+function netHostPingTick() {
+  netSendHostPing();
+  netRefreshPingBadge();
+}
 addEventListener('keydown', e => {
   if (e.code !== 'F3') return;
   e.preventDefault();
@@ -842,6 +861,7 @@ addEventListener('keydown', e => {
   netRenderStatsOverlay();
 });
 setInterval(netSendPing, NET_STATS_PING_MS);
+setInterval(netHostPingTick, NET_HOST_PING_MS);
 setInterval(netRenderStatsOverlay, NET_STATS_OVERLAY_REFRESH_MS);
 
 // Applies a car's NON-positional fields from the snapshot (appearance/state); the position
@@ -1238,13 +1258,15 @@ function updateBountyHud(b) {
 // ---------- Badge, invite link, sharing ----------
 function netRefreshBadge() {
   const el = document.getElementById('mpBadge');
+  const textEl = document.getElementById('mpBadgeText');
   if (el) {
     el.classList.toggle('hidden', !netActive());
-    if (netActive()) {
+    if (netActive() && textEl) {
       const n = net.players.size + 1;
-      el.innerHTML = t(n === 1 ? 'net.badge' : 'net.badgeN', { code: ROOM_CODE, n });
+      textEl.innerHTML = t(n === 1 ? 'net.badge' : 'net.badgeN', { code: ROOM_CODE, n });
     }
   }
+  netRefreshPingBadge();
   const lc = document.getElementById('lobbyCount');
   if (lc && netActive()) lc.textContent = `${net.players.size + 1} / ${net.maxPlayers}`;
 }
