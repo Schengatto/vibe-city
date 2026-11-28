@@ -67,6 +67,7 @@ const HOST_LINK_PING_MS = Number(process.env.HOST_LINK_PING_MS) || 5000;
 const HOST_RTT_SMOOTHING = 0.2;
 const MAX_RELAY_BUFFERED_BYTES = 1024 * 1024;
 const MAX_HOST_INPUT_BUFFERED_BYTES = 256 * 1024;
+const HOST_PING_MIN_INTERVAL_MS = 1000;
 const RTC_SIGNAL_KINDS = new Set(['offer', 'answer', 'ice']);
 const MAX_RTC_SDP_CHARS = 16384;
 const MAX_RTC_ICE_CHARS = 2048;
@@ -621,6 +622,7 @@ function onHostLinkMessage(ws, data, isBinary) {
   let m = null;
   try { m = JSON.parse(data); } catch {}
   if (m && m.t === 'hpo') { onHostPingEcho(room, m); return; }
+  if (m && m.t === 'hpong') { relayHostPong(room, m); return; }
   room.hostLastFrameAt = now();
   if (!m || m.t !== 'hst') return;
   room.hostState = {
@@ -641,6 +643,23 @@ function forwardInputToHost(room, m, id) {
   const link = room.hostLink;
   if (!link || link.bufferedAmount > MAX_HOST_INPUT_BUFFERED_BYTES) return;
   sendRaw(link, forwardedInput(m, id));
+}
+function forwardHostPing(room, p, m) {
+  const link = room.hostLink;
+  if (!hostModeActive(room) || p.id === room.hostId || !Number.isFinite(m.c)) return;
+  if (!link || link.readyState !== 1 || link.bufferedAmount > MAX_HOST_INPUT_BUFFERED_BYTES) return;
+  const at = now();
+  if (at - p.lastHostPingAt < HOST_PING_MIN_INTERVAL_MS) return;
+  p.lastHostPingAt = at;
+  p.hostPingC = m.c;
+  sendRaw(link, { t: 'hping', c: m.c, from: p.id });
+}
+function relayHostPong(room, m) {
+  const target = typeof m.to === 'string' && room.players.get(m.to);
+  if (!target || target.gone || target.id === room.hostId) return;
+  if (!Number.isFinite(m.c) || m.c !== target.hostPingC) return;
+  target.hostPingC = null;
+  sendRaw(target.ws, { t: 'hpong', c: m.c });
 }
 function rtcSignalWithinBudget(sender, targetId, kind) {
   if (!sender.rtcSignalBudget) sender.rtcSignalBudget = new Map();
@@ -686,6 +705,7 @@ function addPlayer(ws, room, hello) {
     token: crypto.randomUUID(), ws: null, gone: false, dropTimer: null,
     playedMs: 0, activeSince: 0, recorded: false,   // shared-leaderboard accounting
     dev: deviceOf(hello), build: normalizedBuild(hello.build),
+    lastHostPingAt: 0, hostPingC: null,
   };
   room.players.set(id, p);
   if (room.sim) room.sim.addPlayer(p.name, p.shirtIdx, p.id);   // Phase 2: join the authoritative city
@@ -853,6 +873,9 @@ function onGameMessage(ws, m) {
       break;
     case 'ping':
       sendRaw(ws, pongFor(m));
+      break;
+    case 'hping':
+      forwardHostPing(room, p, m);
       break;
   }
 }

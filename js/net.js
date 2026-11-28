@@ -298,6 +298,7 @@ function onServerMessage(m) {
       net.hostId = m.id ?? null;
       netResetSnapshotBaseline();
       netSyncHostRole();
+      if (hostChanged) netStatsResetHostRtt(net.stats);
       if (hostChanged && net.hostId !== null && net.hostId !== net.myId) toast(t('net.newHost', { name: m.name }));
       break;
     }
@@ -308,6 +309,7 @@ function onServerMessage(m) {
     case 'kill': netScoreKill(m.id); break;
     case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
     case 'pong': netStatsOnPong(net.stats, m.c, performance.now()); break;
+    case 'hpong': netStatsOnHostPong(net.stats, m.c, performance.now()); break;
     case 'emo': onRemoteEmote(m.id, m.e); break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
@@ -695,6 +697,7 @@ const NET_STATS_OVERLAY_REFRESH_MS = 500;
 function createNetStats() {
   return {
     rtt: null, rttLast: null,
+    hostRtt: null, hostRttLast: null,
     inputRtt: null, inputRttLast: null, pendingInputs: [],
     snapshotTimes: [], snapshotWindow: null,
     hostHz: null, tickSamples: [],
@@ -709,6 +712,15 @@ function netStatsOnPong(stats, clientTime, now) {
   if (!Number.isFinite(clientTime) || clientTime > now) return;
   stats.rttLast = now - clientTime;
   stats.rtt = netStatsSmooth(stats.rtt, stats.rttLast);
+}
+function netStatsOnHostPong(stats, clientTime, now) {
+  if (!Number.isFinite(clientTime) || clientTime > now) return;
+  stats.hostRttLast = now - clientTime;
+  stats.hostRtt = netStatsSmooth(stats.hostRtt, stats.hostRttLast);
+}
+function netStatsResetHostRtt(stats) {
+  stats.hostRtt = null;
+  stats.hostRttLast = null;
 }
 function netStatsOnInputSent(stats, seq, now) {
   stats.pendingInputs.push({ seq, sentAt: now });
@@ -785,6 +797,7 @@ function netStatsLines(stats, interpDelay, now) {
   return [
     ['transport', stats.transport],
     ['RTT', withLast(stats.rtt, stats.rttLast)],
+    ['host RTT', withLast(stats.hostRtt, stats.hostRttLast)],
     ['input RTT', withLast(stats.inputRtt, stats.inputRttLast)],
     ['snap/s', snapshotWindow.rate.toFixed(1)],
     ['interval', ms(snapshotWindow.meanInterval, 1)],
@@ -812,6 +825,35 @@ function netRenderStatsOverlay() {
 function netSendPing() {
   if (netActive()) netSend({ t: 'ping', c: performance.now() });
 }
+const NET_HOST_PING_MS = 2000;
+function netHostPingRole(netState) {
+  if (netState.hostId === null) return 'server';
+  return netState.hostId === netState.myId ? 'host' : 'guest';
+}
+function netSendHostPing() {
+  if (!netActive() || netHostPingRole(net) !== 'guest') return;
+  const c = performance.now();
+  if (!rtcGuestSendHostPing(c)) netSend({ t: 'hping', c });
+}
+function netPingBadgeView(role, stats, hostLabel) {
+  if (role === 'host') return { text: hostLabel, band: 'host' };
+  const value = role === 'server' ? stats.rtt : stats.hostRtt;
+  if (value === null) return { text: '—', band: 'off' };
+  return { text: Math.round(value) + ' ms', band: pingBandClass(value) };
+}
+function netRefreshPingBadge() {
+  const pingEl = document.getElementById('mpPing');
+  const valueEl = document.getElementById('mpPingValue');
+  if (!netActive() || !pingEl || !valueEl) return;
+  const view = netPingBadgeView(netHostPingRole(net), net.stats, t('net.pingHost'));
+  pingEl.className = ('ping ' + view.band).trim();
+  pingEl.title = t('net.pingTitle');
+  valueEl.textContent = view.text;
+}
+function netHostPingTick() {
+  netSendHostPing();
+  netRefreshPingBadge();
+}
 addEventListener('keydown', e => {
   if (e.code !== 'F3') return;
   e.preventDefault();
@@ -819,6 +861,7 @@ addEventListener('keydown', e => {
   netRenderStatsOverlay();
 });
 setInterval(netSendPing, NET_STATS_PING_MS);
+setInterval(netHostPingTick, NET_HOST_PING_MS);
 setInterval(netRenderStatsOverlay, NET_STATS_OVERLAY_REFRESH_MS);
 
 // Applies a car's NON-positional fields from the snapshot (appearance/state); the position
@@ -1215,13 +1258,15 @@ function updateBountyHud(b) {
 // ---------- Badge, invite link, sharing ----------
 function netRefreshBadge() {
   const el = document.getElementById('mpBadge');
+  const textEl = document.getElementById('mpBadgeText');
   if (el) {
     el.classList.toggle('hidden', !netActive());
-    if (netActive()) {
+    if (netActive() && textEl) {
       const n = net.players.size + 1;
-      el.innerHTML = t(n === 1 ? 'net.badge' : 'net.badgeN', { code: ROOM_CODE, n });
+      textEl.innerHTML = t(n === 1 ? 'net.badge' : 'net.badgeN', { code: ROOM_CODE, n });
     }
   }
+  netRefreshPingBadge();
   const lc = document.getElementById('lobbyCount');
   if (lc && netActive()) lc.textContent = `${net.players.size + 1} / ${net.maxPlayers}`;
 }
