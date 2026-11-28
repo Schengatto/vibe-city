@@ -212,8 +212,11 @@ console.log('# travel and pacing');
 {
   ok(reasonOf(shiftLog('pizza', { firstJob: { pxPerFrame: 11 } })) === 'travel', 'ride faster than 10 px/frame -> travel');
   ok(verdictOf(shiftLog('pizza', { firstJob: { pxPerFrame: 10 } })).ok, 'ride at 10 px/frame accepted');
-  ok(reasonOf(shiftLog('fire', { gapFrames: 99 })) === 'pacing', 'next job 99 frames after a completion -> pacing');
-  ok(verdictOf(shiftLog('fire', { gapFrames: 100 })).ok, 'next job 100 frames after a completion accepted');
+  ok(reasonOf(shiftLog('fire', { gapFrames: 37 })) === 'pacing', 'next job 37 frames after a completion -> pacing');
+  ok(verdictOf(shiftLog('fire', { gapFrames: 38 })).ok, 'next job 38 frames after a completion accepted');
+  for (const job of ['patrol', 'fire']) {
+    ok(verdictOf(shiftLog(job, { gapFrames: 40 })).ok, `${job}: honest exit and re-enter after each completion (cooldown 40) accepted`);
+  }
 }
 
 console.log('# score');
