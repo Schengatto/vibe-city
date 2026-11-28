@@ -31,6 +31,9 @@ const BUCKET_RATES = {
   boards: { perMinute: 60, burst: 20 },
 };
 const GLOBAL_BUCKET_RATES = { submit: { perMinute: 600, burst: 600 } };
+const MAPPED_IPV4_PATTERN = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i;
+const IPV6_GROUPS = 8;
+const IPV6_PREFIX_GROUPS = 4;
 const API_HEADERS = {
   'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
   'access-control-allow-origin': '*', 'x-content-type-options': 'nosniff',
@@ -90,7 +93,19 @@ function takeToken(bucket, rate, now) {
 function bucketIn(owner, bucketName, rate, now) {
   return owner[bucketName] || (owner[bucketName] = { tokens: rate.burst, at: now });
 }
-function bucketsOfIp(ip, now) {
+function rateLimitKey(ip) {
+  const mapped = MAPPED_IPV4_PATTERN.exec(ip);
+  if (mapped) return mapped[1];
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.split('%')[0].split('::');
+  const headGroups = head ? head.split(':') : [];
+  const tailGroups = tail ? tail.split(':') : [];
+  const missingGroups = tail === undefined ? 0 : Math.max(0, IPV6_GROUPS - headGroups.length - tailGroups.length);
+  return [...headGroups, ...Array(missingGroups).fill('0'), ...tailGroups]
+    .slice(0, IPV6_PREFIX_GROUPS).map(group => (Number.parseInt(group, 16) || 0).toString(16)).join(':');
+}
+function bucketsOfIp(address, now) {
+  const ip = rateLimitKey(address);
   const tracked = trackedIps.get(ip) || { seenAt: now, buckets: {} };
   trackedIps.delete(ip);
   tracked.seenAt = now;
@@ -108,9 +123,13 @@ function retryAfterSeconds(ip, bucketName, now) {
     const globalWait = secondsUntilToken(globalBucket, globalRate);
     if (globalWait) return globalWait;
   }
-  const ipWait = takeToken(bucketIn(bucketsOfIp(ip, now), bucketName, rate, now), rate, now);
-  if (!ipWait && globalBucket) globalBucket.tokens -= 1;
-  return ipWait;
+  return takeToken(bucketIn(bucketsOfIp(ip, now), bucketName, rate, now), rate, now);
+}
+function chargeGlobalBucket(bucketName, now) {
+  const rate = GLOBAL_BUCKET_RATES[bucketName];
+  const bucket = bucketIn(globalBuckets, bucketName, rate, now);
+  refillBucket(bucket, rate, now);
+  bucket.tokens = Math.max(0, bucket.tokens - 1);
 }
 function pruneIdleBuckets(now = Date.now()) {
   for (const [ip, tracked] of trackedIps) {
@@ -187,6 +206,7 @@ function writeBoards(verdict, name, now) {
 function submitRun(req, res, { body, now, ip }) {
   const verified = runs.verify(body.token, now);
   if (!verified.ok) return verified;
+  chargeGlobalBucket('submit', now);
   const { run } = verified;
   const stored = runs.storedResponse(run);
   if (stored) return stored;
@@ -271,6 +291,6 @@ registerApiRoute('GET', '/boards', readBoard, 'boards');
 setInterval(() => pruneIdleBuckets(), MINUTE_MS).unref?.();
 
 module.exports = {
-  handleApi, registerApiRoute, normalizeName, clientIp, hashIp, pruneIdleBuckets, _setBodyTimeoutMs, _reset,
+  handleApi, registerApiRoute, normalizeName, clientIp, rateLimitKey, hashIp, pruneIdleBuckets, _setBodyTimeoutMs, _reset,
   MAX_BODY_BYTES, MAX_TRACKED_IPS, BUCKET_RATES, GLOBAL_BUCKET_RATES, ERROR_STATUS,
 };

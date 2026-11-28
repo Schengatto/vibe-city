@@ -268,14 +268,45 @@ console.log('# client IP and TRUST_PROXY');
     api._reset();
     globalRate.burst = 2;
     const keyedIp = '10.7.7.7';
-    for (let attempt = 0; attempt < 2; attempt++) await post('/runs/submit', { token: 'x' }, { ip: keyedIp });
-    const refusedByGlobal = [await post('/runs/submit', { token: 'x' }, { ip: keyedIp }), await post('/runs/submit', { token: 'x' }, { ip: keyedIp })];
+    const submitValid = token => post('/runs/submit', { token, name: 'Fede', log: { score: 10 } }, { ip: keyedIp });
+    const tokens = [];
+    for (let index = 0; index < 5; index++) tokens.push(await freshToken());
+    const accepted = [await submitValid(tokens[0]), await submitValid(tokens[1])];
+    ok(accepted.every(answer => answer.status === 200), 'verified submits pass while the global bucket has tokens');
+    const refusedByGlobal = [await submitValid(tokens[2]), await submitValid(tokens[3])];
     ok(refusedByGlobal.every(answer => answer.status === 429), 'exhausted global submit bucket answers 429');
     globalRate.perMinute = 60_000_000;
-    const afterRefill = [await post('/runs/submit', { token: 'x' }, { ip: keyedIp }), await post('/runs/submit', { token: 'x' }, { ip: keyedIp }), await post('/runs/submit', { token: 'x' }, { ip: keyedIp })];
+    const afterRefill = [await submitValid(tokens[2]), await submitValid(tokens[3]), await submitValid(tokens[4])];
     Object.assign(globalRate, savedRate);
     api._reset();
-    ok(afterRefill[0].status === 401 && afterRefill[1].status === 401 && afterRefill[2].status === 429, 'global refusals do not spend the IP token');
+    ok(afterRefill[0].status === 200 && afterRefill[1].status === 200 && afterRefill[2].status === 429, 'global refusals do not spend the IP token');
+  }
+  {
+    const globalRate = api.GLOBAL_BUCKET_RATES.submit;
+    const savedRate = { ...globalRate };
+    api._reset();
+    globalRate.burst = 2;
+    const garbage = [];
+    for (let attempt = 0; attempt < 6; attempt++) garbage.push((await post('/runs/submit', { token: 'x' }, { ip: `10.8.8.${attempt}` })).status);
+    const honest = await post('/runs/submit', { token: await freshToken(), name: 'Fede', log: { score: 10 } });
+    Object.assign(globalRate, savedRate);
+    api._reset();
+    ok(garbage.every(status => status === 401), 'garbage-token submits are refused by the token check, not the global bucket');
+    ok(honest.status === 200, 'garbage-token submits do not consume the global submit bucket');
+  }
+  {
+    ok(api.rateLimitKey('203.0.113.9') === '203.0.113.9', 'IPv4 key is the address');
+    ok(api.rateLimitKey('::ffff:203.0.113.9') === '203.0.113.9', 'IPv4-mapped IPv6 unwrapped to the IPv4 key');
+    ok(api.rateLimitKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd') === api.rateLimitKey('2001:DB8:1:2:1::9'), 'two IPv6 addresses in the same /64 share a key');
+    ok(api.rateLimitKey('2001:db8:1:2:aaaa::1') === '2001:db8:1:2', 'IPv6 key is the first four hextets');
+    ok(api.rateLimitKey('2001:db8:1:3::1') !== api.rateLimitKey('2001:db8:1:2::1'), 'different /64 do not share a key');
+    ok(api.rateLimitKey('2001:db8::1') === '2001:db8:0:0', '"::" expanded inside the prefix');
+    ok(api.rateLimitKey('::1') === '0:0:0:0' && api.rateLimitKey('fe80::1%eth0') === 'fe80:0:0:0', 'loopback and zone-id addresses keyed by prefix');
+    ok(api.rateLimitKey('unknown') === 'unknown', 'non-address placeholder left as is');
+    const sameBlock = [];
+    for (let attempt = 0; attempt < 5; attempt++) sameBlock.push((await post('/runs/submit', { token: 'x' }, { ip: `2001:db8:7:7::${attempt + 1}` })).status);
+    ok(sameBlock.slice(0, 4).every(status => status === 401) && sameBlock[4] === 429, 'rotating addresses inside one /64 share one per-IP bucket');
+    api._reset();
   }
   for (let attempt = 0; attempt < 4; attempt++) await post('/runs/submit', { token: 'x' }, { ip: '10.6.6.6' });
   ok((await post('/runs/submit', { token: 'x' }, { ip: '10.6.6.6' })).status === 429, 'bucket exhausted before pruning');
