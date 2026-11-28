@@ -34,6 +34,8 @@ const { WebSocketServer } = require('ws');
 // Shared leaderboard across every room, persisted to disk: see server/leaderboard.js.
 const leaderboard = require('./leaderboard');
 const boards = require('./boards');
+const { handleApi } = require('./http-api');
+require('./validators');
 // Phase 2: authoritative world simulation (one city per room). If the module is missing
 // (or fails), the server falls back to Phase 1 relaying alone.
 let createRoomSim = null, accumulateSimTime = null;
@@ -977,6 +979,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ rooms: publicRoomList() }));
     return;
   }
+  if (handleApi(req, res)) return;
   if (STATIC_DIR && (req.method === 'GET' || req.method === 'HEAD')) { serveStatic(req, res); return; }
   res.writeHead(404); res.end();
 });

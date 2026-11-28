@@ -19,6 +19,8 @@ services:
       MAX_ROOMS: "20"                  # partite simultanee: oltre, i nuovi host vanno in sala d'attesa
       MAX_QUEUE: "30"                  # lunghezza massima della sala d'attesa
       LEADERBOARD_FILE: /app/data/leaderboard.json   # classifica condivisa (sul volume: sopravvive ai deploy)
+      TRUST_PROXY: "1"
+      RUNS_SECRET: ${RUNS_SECRET:-}
     volumes:
       - ./public:/app/public:ro
       # Dati di runtime del server. In SCRITTURA e FUORI dall'immagine: il container viene
