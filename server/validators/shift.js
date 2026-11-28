@@ -169,7 +169,8 @@ function validateShift({ run, log, now }) {
 }
 
 function checkShiftStart({ roomCode, mutators }) {
-  return roomCode === SHIFT_ROOM_CODE && !(mutators && mutators.length) ? { ok: true } : { ok: false, error: 'mutators_not_allowed' };
+  if (roomCode !== SHIFT_ROOM_CODE) return { ok: false, error: 'bad_request' };
+  return mutators && mutators.length ? { ok: false, error: 'mutators_not_allowed' } : { ok: true };
 }
 
 registerValidator('shift', { validate: validateShift, checkStart: checkShiftStart });

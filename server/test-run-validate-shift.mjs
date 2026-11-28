@@ -113,7 +113,8 @@ console.log('# checkStart');
   const { checkStart } = validatorFor('shift');
   ok(checkStart({ mode: 'shift', job: 'taxi', roomCode: 'PSHIFT' }).ok, 'PSHIFT without mutators accepted');
   ok(checkStart({ mode: 'shift', job: 'taxi', roomCode: 'PSHIFT', mutators: [] }).ok, 'empty mutators accepted');
-  ok(checkStart({ mode: 'shift', job: 'taxi', roomCode: 'PK3X9Q' }).error === 'mutators_not_allowed', 'room other than PSHIFT -> mutators_not_allowed');
+  ok(checkStart({ mode: 'shift', job: 'taxi', roomCode: 'PK3X9Q' }).error === 'bad_request', 'room other than PSHIFT -> bad_request');
+  ok(checkStart({ mode: 'shift', job: 'taxi', roomCode: 'PK3X9Q', mutators: ['tightClock'] }).error === 'bad_request', 'wrong room wins over mutators -> bad_request');
   ok(checkStart({ mode: 'shift', job: 'taxi', roomCode: 'PSHIFT', mutators: ['tightClock'] }).error === 'mutators_not_allowed', 'non-empty mutators -> mutators_not_allowed');
 }
 

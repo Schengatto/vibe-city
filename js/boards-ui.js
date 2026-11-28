@@ -18,7 +18,7 @@ function publicShiftWeekId(ms) {
 async function fetchPublicShiftBoard(url) {
   try {
     const answer = await (await fetch(url)).json();
-    return answer && answer.ok === true ? answer : null;
+    return answer && answer.ok === true && Array.isArray(answer.entries) ? answer : null;
   } catch (error) {
     return null;
   }

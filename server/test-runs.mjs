@@ -71,7 +71,7 @@ console.log('# tampering');
   ok(runs.verify(`${payloadPart}.${signaturePart}AAAA`, NOW).error === 'bad_token', 'longer signature refused');
   ok(runs.verify(`${payloadPart}.${signaturePart}.x`, NOW).error === 'bad_token', 'three parts refused');
   ok(runs.verify(`${payloadPart}.sig+/=`, NOW).error === 'bad_token', 'non base64url signature refused');
-  ok(runs.verify(`${'a'.repeat(256)}.${'b'.repeat(257)}`, NOW).error === 'bad_token', 'token over 512 chars refused');
+  ok(runs.verify(signPayload({ v: 1, n: 'a'.repeat(400), s: NOW, m: 'shift', r: 'PSHIFT' }), NOW).error === 'bad_token', 'validly signed token over 512 chars refused');
   ok(runs.verify(42, NOW).error === 'bad_token' && runs.verify(undefined, NOW).error === 'bad_token', 'non-string token refused');
   ok(runs.verify(signPayload({ v: 2, n: 'ab', s: NOW, m: 'shift', r: 'PSHIFT' }), NOW).error === 'bad_token', 'wrong version refused');
   ok(runs.verify(signPayload({ v: 1, s: NOW, m: 'shift', r: 'PSHIFT' }), NOW).error === 'bad_token', 'missing nonce refused');

@@ -5,11 +5,11 @@ const RUN_PAUSE_BUDGET_MS = 600000;
 const RUN_FRAME_MS = 1000 / 60;
 const RUN_BOARD_STATUS_KEYS = {
   sending: 'board.status.sending', offline: 'board.status.offline', pausedTooLong: 'board.status.pausedTooLong',
-  noName: 'board.status.noName', serverRestarted: 'board.status.serverRestarted', tooLong: 'board.status.tooLong',
+  noName: 'board.status.noName', badName: 'board.status.badName', serverRestarted: 'board.status.serverRestarted', tooLong: 'board.status.tooLong',
   rejected: 'board.status.rejected',
 };
 const RUN_BOARD_ERROR_STATUS = {
-  bad_name: 'noName', bad_token: 'serverRestarted', token_expired: 'pausedTooLong', too_large: 'tooLong', rejected: 'rejected',
+  bad_name: 'badName', bad_token: 'serverRestarted', token_expired: 'pausedTooLong', too_large: 'tooLong', rejected: 'rejected',
 };
 
 let runBoardSession = null;
@@ -80,6 +80,7 @@ function showRunBoardStatus(state, details) {
 
 async function submitShiftRun(session, log, job) {
   if (!log) return showRunBoardStatus('tooLong');
+  if (!(log.score > 0)) return;
   if (!String(playerName || '').trim()) return showRunBoardStatus('noName');
   if (Date.now() - session.startedLocally > log.frames * RUN_FRAME_MS + RUN_PAUSE_BUDGET_MS) return showRunBoardStatus('pausedTooLong');
   showRunBoardStatus('sending');

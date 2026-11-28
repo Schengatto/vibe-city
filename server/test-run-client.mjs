@@ -49,14 +49,14 @@ function makeContext(fetchHandler) {
   return { context, calls, delays, callsAtDelay, element };
 }
 
-function playShift(harness, { mutators = [], mode = 'shift', outcome = 'time' } = {}) {
+function playShift(harness, { mutators = [], mode = 'shift', outcome = 'time', score = 100 } = {}) {
   vm.runInContext(`
     gameEvents.enabled = true;
     runConfig = { mode: '${mode}', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: ${JSON.stringify(mutators)} };
     startRun();
   `, harness.context);
   return settle().then(() => {
-    vm.runInContext(`matchElapsedFrames = 18000; finishRun('${outcome}');`, harness.context);
+    vm.runInContext(`matchElapsedFrames = 18000; runState.score = ${score}; finishRun('${outcome}');`, harness.context);
     return settle();
   });
 }
@@ -117,12 +117,12 @@ ok(noServerStart === null && harness.calls.length === 0, 'no server: start resol
 console.log('5) status per server answer');
 const statusFor = answer => vm.runInContext(`runBoardStatusFor(${JSON.stringify(answer)})`, harness.context);
 const expectedStatus = {
-  bad_name: 'noName', bad_token: 'serverRestarted', token_expired: 'pausedTooLong', too_large: 'tooLong', rejected: 'rejected',
+  bad_name: 'badName', bad_token: 'serverRestarted', token_expired: 'pausedTooLong', too_large: 'tooLong', rejected: 'rejected',
   rate_limited: 'offline', server_error: 'offline', network: 'offline', bad_request: 'offline',
 };
 for (const [error, state] of Object.entries(expectedStatus)) ok(statusFor({ ok: false, error }) === state, `${error} -> ${state}`);
 ok(statusFor(RANKED_ANSWER) === 'ranked', 'ok -> ranked');
-for (const [error, key] of [['bad_token', 'board.status.serverRestarted'], ['token_expired', 'board.status.pausedTooLong'], ['bad_name', 'board.status.noName'], ['rejected', 'board.status.rejected']]) {
+for (const [error, key] of [['bad_token', 'board.status.serverRestarted'], ['token_expired', 'board.status.pausedTooLong'], ['bad_name', 'board.status.badName'], ['rejected', 'board.status.rejected']]) {
   harness = makeContext(answerByPath({ ...okAnswers, '/runs/submit': { ok: false, error } }));
   await playShift(harness);
   ok(harness.element.textContent === 'board.status.label  ' + key, `${error} answer shows ${key}`);
@@ -135,6 +135,9 @@ vm.runInContext("playerName = ''", harness.context);
 await playShift(harness);
 ok(submitCalls(harness.calls).length === 0 && harness.element.textContent.endsWith('board.status.noName'), 'empty name: not submitted, set a name');
 harness = makeContext(answerByPath(okAnswers));
+await playShift(harness, { score: 0 });
+ok(submitCalls(harness.calls).length === 0 && harness.element.classList.contains('hidden'), 'zero score: not submitted, status stays hidden');
+harness = makeContext(answerByPath(okAnswers));
 vm.runInContext('gameEvents.on("run:start", () => { runState.logTruncated = true; })', harness.context);
 await playShift(harness);
 ok(submitCalls(harness.calls).length === 0 && harness.element.textContent.endsWith('board.status.tooLong'), 'truncated log: not submitted, too long');
@@ -143,7 +146,7 @@ vm.runInContext('gameEvents.on("run:start", () => { nowForTest += 300000 + 60000
 await playShift(harness);
 ok(submitCalls(harness.calls).length === 0 && harness.element.textContent.endsWith('board.status.pausedTooLong'), 'paused past the budget: not submitted');
 harness = makeContext(() => new Promise(() => {}));
-vm.runInContext("gameEvents.enabled = true; runConfig = { mode: 'shift', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: [] }; startRun(); matchElapsedFrames = 18000; finishRun('time');", harness.context);
+vm.runInContext("gameEvents.enabled = true; runConfig = { mode: 'shift', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: [] }; startRun(); matchElapsedFrames = 18000; runState.score = 100; finishRun('time');", harness.context);
 await settle();
 ok(harness.element.textContent.endsWith('board.status.sending'), 'sending while the token or submit is pending');
 
@@ -157,7 +160,7 @@ console.log('7) submit waits for the real shift time counted from the token answ
 let releaseStart;
 const delayedStart = new Promise(resolve => { releaseStart = resolve; });
 harness = makeContext(url => (url.endsWith('/runs/start') ? delayedStart.then(() => ({ json: () => Promise.resolve(okAnswers['/runs/start']) })) : jsonResponse(RANKED_ANSWER)));
-vm.runInContext("gameEvents.enabled = true; runConfig = { mode: 'shift', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: [] }; startRun(); matchElapsedFrames = 18000; finishRun('time');", harness.context);
+vm.runInContext("gameEvents.enabled = true; runConfig = { mode: 'shift', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: [] }; startRun(); matchElapsedFrames = 18000; runState.score = 100; finishRun('time');", harness.context);
 await settle();
 ok(submitCalls(harness.calls).length === 0 && harness.element.textContent.endsWith('board.status.sending'), 'sending while the start answer is late');
 vm.runInContext('nowForTest += 295000', harness.context);
