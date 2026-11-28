@@ -68,7 +68,7 @@ function runBoardRankText(boards, job) {
     .sort((first, second) => isAllTime(first) - isAllTime(second))
     .map(board => t(isAllTime(board) ? 'board.rankAll' : 'board.rankWeek', { rank: board.rank, job: jobName }));
   if (!ranks.length) return t('board.status.unranked');
-  return ranks.join('  ·  ') + (boards.some(board => board.improved) ? '   ' + t('board.newBest') : '');
+  return ranks.join('  ·  ') + (boards.some(board => isAllTime(board) && board.improved) ? '   ' + t('board.newBest') : '');
 }
 
 function showRunBoardStatus(state, details) {
@@ -83,22 +83,32 @@ async function submitShiftRun(session, log, job) {
   if (!String(playerName || '').trim()) return showRunBoardStatus('noName');
   if (Date.now() - session.startedLocally > log.frames * RUN_FRAME_MS + RUN_PAUSE_BUDGET_MS) return showRunBoardStatus('pausedTooLong');
   showRunBoardStatus('sending');
-  const started = await session.tokenRequest;
-  if (!started) return showRunBoardStatus('offline');
-  const answer = await runClient.submit(started.token, log);
-  showRunBoardStatus(runBoardStatusFor(answer), { boards: answer.boards, job });
+  try {
+    const started = await session.tokenRequest;
+    if (!started) return showRunBoardStatus('offline');
+    await waitRunApi(Math.max(0, log.frames * RUN_FRAME_MS - (Date.now() - session.tokenReadyAt)));
+    const answer = await runClient.submit(started.token, log);
+    showRunBoardStatus(runBoardStatusFor(answer), { boards: answer.boards, job });
+  } catch {
+    showRunBoardStatus('offline');
+  }
 }
 
 gameEvents.on('run:start', payload => {
   runBoardSession = null;
   if (payload.mode !== 'shift' || payload.mutators.length) return;
-  runBoardSession = { startedLocally: Date.now(), tokenRequest: runClient.start({ mode: 'shift', job: payload.job, roomCode: runConfig.roomCode }) };
+  const session = { startedLocally: Date.now(), tokenReadyAt: null, tokenRequest: null };
+  session.tokenRequest = runClient.start({ mode: 'shift', job: payload.job, roomCode: runConfig.roomCode }).then(started => {
+    session.tokenReadyAt = Date.now();
+    return started;
+  });
+  runBoardSession = session;
 });
 
 gameEvents.on('run:end', payload => {
   const session = runBoardSession;
   runBoardSession = null;
-  if (!session || !payload.complete) return;
+  if (!session || payload.complete !== true) return;
   submitShiftRun(session, encodeShiftLog(runState, payload.frame - runState.startFrame), payload.job);
 });
 

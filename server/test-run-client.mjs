@@ -26,11 +26,12 @@ function makeElement() {
 function makeContext(fetchHandler) {
   const calls = [];
   const delays = [];
+  const callsAtDelay = [];
   const element = makeElement();
   const context = vm.createContext({
     console, AbortController, URLSearchParams,
     fetch: (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return fetchHandler(url, init); },
-    setTimeout: (callback, ms) => { delays.push(ms); setImmediate(callback); return delays.length; },
+    setTimeout: (callback, ms) => { delays.push(ms); callsAtDelay.push(calls.length); setImmediate(callback); return delays.length; },
     clearTimeout: () => {},
     $: selector => (selector === '#runBoardStatus' ? element : null),
   });
@@ -45,7 +46,7 @@ function makeContext(fetchHandler) {
     Date.now = () => nowForTest;
   `, context);
   for (const file of ['game-events.js', 'job-score.js', 'run.js', 'run-log.js', 'run-client.js']) vm.runInContext(read(file), context, { filename: file });
-  return { context, calls, delays, element };
+  return { context, calls, delays, callsAtDelay, element };
 }
 
 function playShift(harness, { mutators = [], mode = 'shift', outcome = 'time' } = {}) {
@@ -151,6 +152,36 @@ harness = makeContext(answerByPath(okAnswers));
 ok(vm.runInContext("runClient.boardsUrl('shift:taxi:all', 20, 'Ada')", harness.context) === 'http://localhost:8787/boards?id=shift%3Ataxi%3Aall&limit=20&name=Ada', 'boards URL with id, limit and name');
 vm.runInContext('serverUrlForTest = null', harness.context);
 ok(vm.runInContext("runClient.boardsUrl('shift:taxi:all', 20)", harness.context) === null, 'no server: null boards URL');
+
+console.log('7) submit waits for the real shift time counted from the token answer');
+let releaseStart;
+const delayedStart = new Promise(resolve => { releaseStart = resolve; });
+harness = makeContext(url => (url.endsWith('/runs/start') ? delayedStart.then(() => ({ json: () => Promise.resolve(okAnswers['/runs/start']) })) : jsonResponse(RANKED_ANSWER)));
+vm.runInContext("gameEvents.enabled = true; runConfig = { mode: 'shift', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: [] }; startRun(); matchElapsedFrames = 18000; finishRun('time');", harness.context);
+await settle();
+ok(submitCalls(harness.calls).length === 0 && harness.element.textContent.endsWith('board.status.sending'), 'sending while the start answer is late');
+vm.runInContext('nowForTest += 295000', harness.context);
+releaseStart();
+await settle();
+const shiftWaitIndex = harness.delays.findIndex(delay => Math.abs(delay - 300000) < 1);
+ok(shiftWaitIndex >= 0, 'full shift time awaited after the late token answer, not the time already elapsed locally');
+ok(harness.callsAtDelay[shiftWaitIndex] === 1 && submitCalls(harness.calls).length === 1, 'submit goes out only after the wait');
+
+console.log('8) hardening');
+harness = makeContext(answerByPath({ ...okAnswers, '/runs/submit': { ok: true, value: 10 } }));
+await playShift(harness);
+ok(harness.element.textContent.endsWith('board.status.offline'), 'ok answer without boards ends in the offline status');
+const weeklyOnlyImproved = { ok: true, value: 1, boards: [
+  { id: 'shift:taxi:all', rank: 9, best: 5000, improved: false },
+  { id: 'shift:taxi:2026-W48', rank: 2, best: 100, improved: true },
+] };
+harness = makeContext(answerByPath({ ...okAnswers, '/runs/submit': weeklyOnlyImproved }));
+await playShift(harness);
+ok(harness.element.textContent.includes('board.rankAll:9') && !harness.element.textContent.includes('board.newBest'), 'weekly-only improvement shows no new best');
+harness = makeContext(answerByPath(okAnswers));
+vm.runInContext("gameEvents.enabled = true; runConfig = { mode: 'shift', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: [] }; startRun(); matchElapsedFrames = 18000; gameEvents.emit('run:end', { complete: 'true', frame: 18000, job: 'taxi' });", harness.context);
+await settle();
+ok(submitCalls(harness.calls).length === 0, 'non-boolean complete never submits');
 
 console.log(`\n${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);
