@@ -93,23 +93,35 @@ function updateShiftRecovery() {
   toast(t('shift.newVehicle'));
 }
 
+function createShiftJobRow(job, best) {
+  const row = document.createElement('div'); row.className = 'shiftRow';
+  const name = document.createElement('span'); name.className = 'shiftJob'; name.textContent = t('shift.job.' + job);
+  const bestLabel = document.createElement('span'); bestLabel.className = 'shiftBest';
+  if (!best) bestLabel.textContent = t('shift.noBest');
+  else {
+    bestLabel.textContent = t('shift.best', { score: formatRunScore(best.score) }) + (best.medal ? ' ' + RUN_MEDAL_GLYPHS[best.medal] : '');
+    if (!best.current) { bestLabel.classList.add('old'); bestLabel.title = t('shift.oldRules'); }
+  }
+  row.append(name, bestLabel);
+  return row;
+}
+
+function renderShiftBestsBoard(container) {
+  const bests = SHIFT_JOBS.map(job => ({ job, best: shiftBestEntry(job) }));
+  if (!bests.some(entry => entry.best)) { container.appendChild(createBoardMessage('board.missionsEmpty')); return; }
+  for (const { job, best } of bests) container.appendChild(createShiftJobRow(job, best));
+}
+
 function renderShiftPanel() {
   const list = $('#shiftList'); if (!list) return;
   list.textContent = '';
   let closest = null;
   for (const job of SHIFT_JOBS) {
     const best = shiftBestEntry(job);
-    const row = document.createElement('div'); row.className = 'shiftRow';
-    const name = document.createElement('span'); name.className = 'shiftJob'; name.textContent = t('shift.job.' + job);
-    const bestLabel = document.createElement('span'); bestLabel.className = 'shiftBest';
-    if (!best) bestLabel.textContent = t('shift.noBest');
-    else {
-      bestLabel.textContent = t('shift.best', { score: formatRunScore(best.score) }) + (best.medal ? ' ' + RUN_MEDAL_GLYPHS[best.medal] : '');
-      if (!best.current) { bestLabel.classList.add('old'); bestLabel.title = t('shift.oldRules'); }
-    }
+    const row = createShiftJobRow(job, best);
     const start = document.createElement('button'); start.className = 'mbtn shiftStart'; start.textContent = t('shift.start');
     start.onclick = () => launchRun({ mode: 'shift', job, minutes: SHIFT_MINUTES, roomCode: SHIFT_ROOM_CODE, mutators: [] });
-    row.append(name, bestLabel, start);
+    row.appendChild(start);
     list.appendChild(row);
     const currentBest = best && best.current ? best.score : 0;
     const next = nextShiftMedal(job, currentBest);

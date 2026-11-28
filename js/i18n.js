@@ -208,6 +208,11 @@ const STR = {
     'board.rankWeek': '#{rank} {job} questa settimana',
     'board.rankAll': '#{rank} {job} di sempre',
     'board.newBest': '(nuovo record)',
+    'board.title': '🏆 Classifica',
+    'board.global': 'Globale',
+    'board.singleplayer': 'Giocatore singolo',
+    'board.missions': 'Missioni',
+    'board.missionsEmpty': 'Nessun turno completato — il tuo primo record ti aspetta!',
 
     // ---- End of match ----
     'go.time': '⏱ Tempo scaduto!',
@@ -250,8 +255,7 @@ const STR = {
     'menu.shifts': '⏱ Turni di lavoro',
     'menu.mp': 'Multigiocatore',
     'menu.settings': 'Impostazioni',
-    'menu.scores': 'Record locali',
-    'menu.lb': 'Classifica online',
+    'menu.board': 'Classifica',
     'menu.howto': 'Come si gioca',
     'menu.install': 'Installa l\'app',
     'menu.installed': 'App installata! 🎉',
@@ -372,7 +376,6 @@ const STR = {
     'music.toggle': 'Musica del menu: accendi o spegni',
 
     // ---- Local high scores ----
-    'scores.title': '🏆 Record locali',
     'scores.name': 'Nome',
     'scores.score': 'Punteggio',
     'scores.duration': 'Durata',
@@ -380,7 +383,6 @@ const STR = {
     'scores.empty': 'Nessuna partita giocata — la classifica ti aspetta!',
 
     // ---- Shared online leaderboard (the server's) ----
-    'lb.title': '🌐 Classifica online',
     'lb.player': 'Giocatore',
     'lb.ppm': 'Pt/min',
     'lb.matches': 'Partite',
@@ -730,6 +732,11 @@ const STR = {
     'board.rankWeek': '#{rank} {job} this week',
     'board.rankAll': '#{rank} {job} all time',
     'board.newBest': '(new best)',
+    'board.title': '🏆 Leaderboard',
+    'board.global': 'Global',
+    'board.singleplayer': 'Singleplayer',
+    'board.missions': 'Missions',
+    'board.missionsEmpty': 'No shift completed yet — your first record is waiting!',
 
     'go.time': '⏱ Time\'s up!',
     'go.quit': '🏁 Game over',
@@ -767,8 +774,7 @@ const STR = {
     'menu.shifts': '⏱ Job shifts',
     'menu.mp': 'Multiplayer',
     'menu.settings': 'Settings',
-    'menu.scores': 'Local records',
-    'menu.lb': 'Online leaderboard',
+    'menu.board': 'Leaderboard',
     'menu.howto': 'How to play',
     'menu.install': 'Install the app',
     'menu.installed': 'App installed! 🎉',
@@ -884,14 +890,12 @@ const STR = {
     'set.save': '💾 Save',
     'music.toggle': 'Menu music: turn on or off',
 
-    'scores.title': '🏆 Local records',
     'scores.name': 'Name',
     'scores.score': 'Score',
     'scores.duration': 'Length',
     'scores.date': 'Date',
     'scores.empty': 'No games played yet — the leaderboard is waiting for you!',
 
-    'lb.title': '🌐 Online leaderboard',
     'lb.player': 'Player',
     'lb.ppm': 'Pts/min',
     'lb.matches': 'Games',

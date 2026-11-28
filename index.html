@@ -58,11 +58,11 @@
     font-size:18px; font-weight:bold; color:#ffd23a; background:rgba(0,0,0,.45); padding:4px 14px;
     border-radius:8px; text-shadow:0 2px 3px #000; }
   body.touch #shiftHud { top:8px; font-size:11px; padding:2px 8px; white-space:normal; text-align:center; max-width:44vw; }
-  #shiftPanel .shiftRow { display:flex; align-items:center; gap:10px; width:min(460px,92vw); padding:7px 0;
+  .shiftRow { display:flex; align-items:center; gap:10px; width:min(460px,92vw); padding:7px 0;
     border-bottom:1px solid rgba(255,255,255,.08); }
-  #shiftPanel .shiftJob { flex:1; text-align:left; font-weight:bold; }
-  #shiftPanel .shiftBest { min-width:130px; text-align:right; color:#ffd23a; }
-  #shiftPanel .shiftBest.old { color:#8a8fa8; }
+  .shiftJob { flex:1; text-align:left; font-weight:bold; }
+  .shiftBest { min-width:130px; text-align:right; color:#ffd23a; }
+  .shiftBest.old { color:#8a8fa8; }
   #shiftPanel .shiftStart { width:auto; padding:8px 16px; font-size:14px; }
   #shiftPanel .shiftStart::before { display:none; }
   #shiftNext { margin:10px 0 4px; opacity:.85; }
@@ -328,25 +328,31 @@
   .field select option { background:#0d0d18; color:#3dff9e; }
   /* The local high scores and the server's shared leaderboard share one look: same table,
      two data sources (localStorage · GET /leaderboard). */
-  #scoreTable, #lbTable { border-collapse:collapse; width:min(440px,92vw); font-family:'Courier New',monospace;
+  .boardTabs { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+  .boardTab { font:bold 13px 'Trebuchet MS','Segoe UI',sans-serif; padding:8px 14px; border-radius:10px; cursor:pointer;
+    color:#e6ddf5; background:rgba(14,8,30,.55); border:2px solid rgba(255,255,255,.16); }
+  .boardTab:hover { border-color:#ff3ea5; color:#fff; }
+  .boardTab.active { color:#2a0830; background:#33e0ff; border-color:#33e0ff; }
+  .boardView { display:flex; flex-direction:column; align-items:center; gap:12px; }
+  .boardTable { border-collapse:collapse; width:min(440px,92vw); font-family:'Courier New',monospace;
     font-weight:bold; font-size:13px; letter-spacing:.08em; background:rgba(0,0,0,.45);
     border:2px solid #1d4436; border-radius:10px; overflow:hidden; }
-  #scoreTable th, #lbTable th { font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:#ff3ea5;
+  .boardTable th { font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:#ff3ea5;
     text-shadow:0 0 8px rgba(255,62,165,.7); padding:9px 10px; border-bottom:1px solid rgba(51,224,255,.25); }
-  #scoreTable td, #lbTable td { padding:8px 10px; text-align:center; color:#c9cde8; border-bottom:1px solid rgba(255,255,255,.06); }
-  #scoreTable td.nm, #lbTable td.nm { text-align:left; }
-  #scoreTable td.sc, #lbTable td.sc { color:#3dff9e; text-shadow:0 0 8px rgba(61,255,158,.6); }
+  .boardTable td { padding:8px 10px; text-align:center; color:#c9cde8; border-bottom:1px solid rgba(255,255,255,.06); }
+  .boardTable td.nm { text-align:left; }
+  .boardTable td.sc { color:#3dff9e; text-shadow:0 0 8px rgba(61,255,158,.6); }
   /* Gold, silver and bronze on the first three rows, as in any hall of fame. */
-  #scoreTable tbody tr:nth-child(1) td, #lbTable tbody tr:nth-child(1) td { color:#ffd23a; text-shadow:0 0 8px rgba(255,210,58,.6); }
-  #scoreTable tbody tr:nth-child(2) td, #lbTable tbody tr:nth-child(2) td { color:#e4e9f2; }
-  #scoreTable tbody tr:nth-child(3) td, #lbTable tbody tr:nth-child(3) td { color:#ff9a5a; }
-  #scoreEmpty, #lbMsg { opacity:.7; font-size:15px; }
-  #lbTable { width:min(520px,94vw); }
-  #lbTable td.sc { font-size:15px; }
+  .boardTable tbody tr:nth-child(1) td { color:#ffd23a; text-shadow:0 0 8px rgba(255,210,58,.6); }
+  .boardTable tbody tr:nth-child(2) td { color:#e4e9f2; }
+  .boardTable tbody tr:nth-child(3) td { color:#ff9a5a; }
+  .boardMsg { opacity:.7; font-size:15px; }
+  .boardTable.wide { width:min(520px,94vw); }
+  .boardTable.wide td.sc { font-size:15px; }
   /* Your own row, wherever it lands: you should spot yourself without reading every name. */
-  #lbTable tbody tr.me td { color:#33e0ff !important; text-shadow:0 0 9px rgba(51,224,255,.7) !important;
+  .boardTable tbody tr.me td { color:#33e0ff !important; text-shadow:0 0 9px rgba(51,224,255,.7) !important;
     background:rgba(51,224,255,.08); }
-  #lbNote { max-width:min(520px,94vw); font:bold 11px 'Courier New',monospace; letter-spacing:.06em;
+  .boardNote { max-width:min(520px,94vw); font:bold 11px 'Courier New',monospace; letter-spacing:.06em;
     line-height:1.5; opacity:.65; }
 
   /* ---- Pause and end-of-match overlays: neon over scanlines ---- */
@@ -725,9 +731,8 @@
       <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">Riprendi partita</button>
       <button id="shiftBtn" class="mbtn" data-i18n="menu.shifts">Turni di lavoro</button>
       <button id="mpBtn" class="mbtn" data-i18n="menu.mp">Multigiocatore</button>
+      <button id="boardBtn" class="mbtn" data-i18n="menu.board">Classifica</button>
       <button id="settingsBtn" class="mbtn minor" data-i18n="menu.settings">Impostazioni</button>
-      <button id="scoresBtn" class="mbtn minor" data-i18n="menu.scores">Record locali</button>
-      <button id="lbBtn" class="mbtn minor" data-i18n="menu.lb">Classifica online</button>
       <button id="howtoBtn" class="mbtn minor" data-i18n="menu.howto">Come si gioca</button>
       <!-- Only appears when the browser offers installation (beforeinstallprompt) -->
       <button id="installBtn" class="mbtn minor hidden" data-i18n="menu.install">Installa l'app</button>
@@ -957,30 +962,11 @@
       <button id="settingsBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
-    <!-- High scores -->
-    <div id="scoresPanel" class="panel hidden">
-      <h2 data-i18n="scores.title">🏆 Record locali</h2>
-      <table id="scoreTable">
-        <thead><tr><th>#</th><th data-i18n="scores.name">Nome</th><th data-i18n="scores.score">Punteggio</th>
-          <th data-i18n="scores.duration">Durata</th><th data-i18n="scores.date">Data</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <div id="scoreEmpty" class="hidden" data-i18n="scores.empty">Nessuna partita giocata — la classifica ti aspetta!</div>
-      <button id="scoresBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
-    </div>
-
-    <!-- Shared multiplayer leaderboard (served by the server: GET /leaderboard) -->
-    <div id="lbPanel" class="panel hidden">
-      <h2 data-i18n="lb.title">🌐 Classifica online</h2>
-      <table id="lbTable" class="hidden">
-        <thead><tr><th>#</th><th data-i18n="lb.player">Giocatore</th><th data-i18n="lb.ppm">Pt/min</th>
-          <th data-i18n="lb.matches">Partite</th><th data-i18n="lb.time">Tempo</th>
-          <th data-i18n="lb.best">Migliore</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <div id="lbMsg" data-i18n="lb.loading">Carico la classifica…</div>
-      <div id="lbNote" class="hidden" data-i18n="lb.note">Il punteggio è diviso per i minuti giocati, così partite corte e lunghe si confrontano.</div>
-      <button id="lbBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
+    <div id="boardPanel" class="panel hidden">
+      <h2 data-i18n="board.title">🏆 Classifica</h2>
+      <div id="boardTabs" class="boardTabs"></div>
+      <div id="boardContent"></div>
+      <button id="boardBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- How to play -->
@@ -1050,6 +1036,7 @@
   <script src="js/core.js"></script>
   <script src="js/mutators.js"></script>
   <script src="js/i18n.js"></script>
+  <script src="js/board-tabs.js"></script>
   <script src="js/public-games.js"></script>
   <script src="js/city.js"></script>
   <script src="js/race-track.js"></script>
