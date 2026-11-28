@@ -34,11 +34,12 @@ function comboCompleteJob(state, payload) {
 function comboApply(state, type, payload = {}) {
   if (type === 'job:complete') return comboCompleteJob(state, payload);
   const reason = comboBreakReason(type, payload);
-  if (!reason || state.streak === 0 || payload.frame === state.lastBreakFrame) {
+  const frameKnown = Number.isFinite(payload.frame);
+  if (!reason || state.streak === 0 || (frameKnown && payload.frame === state.lastBreakFrame)) {
     return { state: { ...state }, applied: null, change: null, broke: null };
   }
   return {
-    state: { ...state, streak: 0, multiplier: 1, breaks: state.breaks + 1, lastBreakFrame: payload.frame },
+    state: { ...state, streak: 0, multiplier: 1, breaks: state.breaks + 1, lastBreakFrame: frameKnown ? payload.frame : -1 },
     applied: null,
     change: null,
     broke: { reason, multiplier: state.multiplier },

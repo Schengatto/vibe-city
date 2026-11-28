@@ -85,6 +85,11 @@ ok(downed.broke.reason === 'down', 'first reason wins');
 const failedLater = comboApply(completeJobs(3, downed.state), 'job:fail', { reason: 'down', frame: 11 });
 ok(failedLater.broke && failedLater.broke.reason === 'fail' && failedLater.state.breaks === 2, 'different frame after rebuilding streak counts twice');
 
+const firstFrameless = comboApply(completeJobs(3), 'player:down', {});
+const secondFrameless = comboApply(completeJobs(3, firstFrameless.state), 'job:fail', { reason: 'timeout' });
+ok(firstFrameless.state.lastBreakFrame === -1 && secondFrameless.state.lastBreakFrame === -1, 'frameless breaks keep lastBreakFrame -1');
+ok(secondFrameless.broke && secondFrameless.state.breaks === 2, 'frameless breaks after rebuilding streak count twice');
+
 console.log('8) break at streak 0');
 const idleBreak = comboApply(comboInitial(), 'job:fail', { reason: 'timeout', frame: 3 });
 ok(idleBreak.broke === null && idleBreak.state.breaks === 0 && idleBreak.state.lastBreakFrame === -1, 'not counted');
