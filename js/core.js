@@ -79,6 +79,11 @@ const PEACE_CITY = (() => {
 const rnd  = (a, b) => a + random() * (b - a);
 const rndi = (a, b) => Math.floor(rnd(a, b + 1));
 const pick = arr => arr[rndi(0, arr.length - 1)];
+let jobRandom;
+function resetJobRandom() { jobRandom = mulberry32(hashStr(ROOM_CODE + ':JOBS')); }
+resetJobRandom();
+const jobRnd = (a, b) => a + jobRandom() * (b - a);
+const jobPick = arr => arr[Math.floor(jobRandom() * arr.length)];
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 const TAU = Math.PI * 2;
 // Angular difference normalised to [-PI, PI].
