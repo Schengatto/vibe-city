@@ -363,7 +363,7 @@
     letter-spacing:.14em; color:#ffd23a; text-shadow:0 0 18px rgba(255,210,58,.8); }
   #goMutators { font:14px 'Courier New',monospace; color:#e9e6ff; text-align:center; padding:0 12px; }
   #goMutators.hidden { display:none; }
-  #goRank, #runResultBest, #runResultTarget { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
+  #goRank, #runResultBest, #runResultTarget, #runBoardStatus { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
     text-shadow:0 0 8px rgba(51,224,255,.6); text-align:center; }
   #runResultMedal { font-size:clamp(36px,7vw,56px); line-height:1; }
   #runResultStats { display:flex; flex-wrap:wrap; justify-content:center; gap:6px 24px; font:14px 'Courier New',monospace; color:#e9e6ff; }
@@ -625,6 +625,7 @@
     <div id="runResultMedal"></div>
     <div id="runResultBest" class="hidden"></div>
     <div id="runResultTarget" class="hidden"></div>
+    <div id="runBoardStatus" class="hidden"></div>
     <div id="runResultStats"></div>
     <div id="runResultButtons">
       <button id="runRetry" class="mbtn" data-i18n="shift.retry">🔁 Riprova</button>
@@ -1072,6 +1073,8 @@
   <script src="js/save.js"></script>
   <script src="js/job-score.js"></script>
   <script src="js/run.js"></script>
+  <script src="js/run-log.js"></script>
+  <script src="js/run-client.js"></script>
   <script src="js/shift.js"></script>
   <script src="js/ui.js"></script>
 
